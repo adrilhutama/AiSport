@@ -3,7 +3,7 @@
 import React from 'react';
 import { AIParlay, LegSelection } from '@/types';
 import { ShieldCheck, TrendingUp, Sparkles, CheckCircle2, XCircle, Clock, ArrowRight } from 'lucide-react';
-import { EVBadge } from '@/components/StatBadge';
+import { EVBadge, FormBadges } from '@/components/StatBadge';
 import { TeamCrest } from '@/components/TeamCrest';
 
 interface AIParlayCardProps {
@@ -103,12 +103,14 @@ export const AIParlayCard: React.FC<AIParlayCardProps> = ({ parlay, onTailSlip }
               className="bg-slate-800/40 border border-slate-800 rounded-lg p-2.5 flex items-center justify-between text-xs"
             >
               <div className="space-y-1">
-                <div className="flex items-center gap-1.5 font-semibold text-slate-200">
+                <div className="flex flex-wrap items-center gap-1.5 font-semibold text-slate-200">
                   <TeamCrest src={leg.homeCrest} name={leg.homeTeam} size="xs" />
                   <span>{leg.homeTeam}</span>
+                  {leg.homeForm && <FormBadges form={leg.homeForm} />}
                   <span className="text-slate-500 font-normal text-[10px]">vs</span>
                   <TeamCrest src={leg.awayCrest} name={leg.awayTeam} size="xs" />
                   <span>{leg.awayTeam}</span>
+                  {leg.awayForm && <FormBadges form={leg.awayForm} />}
                 </div>
                 <div className="text-slate-400 text-[11px] font-mono">
                   {leg.market}: <span className="text-cyan-300 font-semibold">{leg.selection}</span>

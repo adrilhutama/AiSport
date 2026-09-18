@@ -2,7 +2,7 @@ import { createServerClient } from '@/lib/supabase/server';
 import { Fixture, AIParlay, Team, MarketOdds } from '@/types';
 import { MOCK_FIXTURES, MOCK_HISTORICAL_PARLAYS, MOCK_TEAMS } from '@/lib/mock-data';
 import { analyzeFixtureQuant } from '@/lib/analytics';
-import { generateCuratedParlays } from '@/lib/parlay-engine';
+import { generateCuratedParlays } from '@/lib/ai-parlay-generator';
 
 export async function getOddsMatrixData(): Promise<{
   fixtures: Fixture[];

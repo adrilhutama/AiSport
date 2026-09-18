@@ -108,6 +108,8 @@ export interface LegSelection {
   awayTeam: string;
   homeCrest?: string;
   awayCrest?: string;
+  homeForm?: string;
+  awayForm?: string;
   market: MarketType;
   selection: BetSelection;
   odds: number;

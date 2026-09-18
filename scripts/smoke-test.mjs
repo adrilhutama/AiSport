@@ -34,7 +34,10 @@ async function runSmokeTests() {
     if (!syncData.success || !Array.isArray(syncData.summary?.leaguesProcessed)) {
       throw new Error('Sync API response structure is invalid');
     }
-    console.log(`   ✅ Sync API returned success (${syncData.summary.fixturesUpdated} fixtures, mode: ${syncData.summary.mode}).`);
+    if (!syncData.summary?.oddsApiQuota || typeof syncData.summary.oddsApiQuota.remaining === 'undefined') {
+      throw new Error('Sync API summary missing oddsApiQuota tracking');
+    }
+    console.log(`   ✅ Sync API returned success (${syncData.summary.fixturesUpdated} fixtures, quota remaining: ${syncData.summary.oddsApiQuota.remaining}, mode: ${syncData.summary.mode}).`);
 
     // 3. Test Fixtures Integrity via /api/fixtures
     console.log('\n3. Testing Fixtures Data Integrity & Strict League Isolation...');
@@ -124,13 +127,19 @@ async function runSmokeTests() {
       }
       // Check legs match upcoming fixtures and are not in the past
       for (const leg of found.legs) {
+        if (!leg.homeCrest || !leg.awayCrest) {
+          throw new Error(`Slip ${title} leg missing homeCrest or awayCrest for ${leg.homeTeam} vs ${leg.awayTeam}`);
+        }
+        if (!leg.homeForm || !leg.awayForm) {
+          throw new Error(`Slip ${title} leg missing homeForm or awayForm for ${leg.homeTeam} vs ${leg.awayTeam}`);
+        }
         const fixture = fixtures.find(f => f.id === leg.fixtureId);
         if (fixture && (fixture.status === 'FINISHED' || fixture.status === 'IN_PLAY')) {
           throw new Error(`Slip ${title} includes finished or in-play fixture: ${fixture.id}`);
         }
       }
     }
-    console.log(`   ✅ Curated slips verified: Safe Combo #48, Value Seeker #29, and Weekend Lotto Moonshot #14 contain strictly upcoming legs.`);
+    console.log(`   ✅ Curated slips verified: Safe Combo #48, Value Seeker #29, and Weekend Lotto Moonshot #14 contain strictly upcoming legs with official crests and form.`);
 
     console.log('\n🎉 All smoke tests passed successfully!');
   } catch (err) {

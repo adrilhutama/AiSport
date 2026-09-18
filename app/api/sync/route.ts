@@ -5,9 +5,11 @@ import { findNormalizedTeamId, cleanTeamString, getTeamLeague } from '@/lib/team
 import { LEAGUES_DATA, MOCK_FIXTURES, MOCK_TEAMS } from '@/lib/mock-data';
 import { LeagueCode, Fixture, MarketOdds } from '@/types';
 import { analyzeFixtureQuant } from '@/lib/analytics';
-import { generateCuratedParlays } from '@/lib/parlay-engine';
+import { generateCuratedParlays } from '@/lib/ai-parlay-generator';
 
 export const dynamic = 'force-dynamic';
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function parseTeamForm(rawForm?: string | null): string {
   if (!rawForm) return 'WDLWW';
@@ -118,6 +120,10 @@ async function handleSync(request: NextRequest) {
     teamsUpdated: 0,
     oddsUpdated: 0,
     parlaysUpdated: 0,
+    oddsApiQuota: {
+      remaining: 500,
+      used: 0,
+    } as { remaining: number | null; used: number | null },
     errors: [] as string[],
   };
 
@@ -284,10 +290,15 @@ async function handleSync(request: NextRequest) {
     btts_odds?: Record<string, number>;
   }>();
 
+  const now = new Date();
+  const todayStr = now.toISOString().slice(0, 10);
+  const futureDate = new Date(now.getTime() + 10 * 24 * 60 * 60 * 1000);
+  const futureStr = futureDate.toISOString().slice(0, 10);
+
   for (const code of leagueCodes) {
     const leagueInfo = LEAGUES_DATA[code];
     try {
-      // 1. Fetch Standings & Form from Football-Data.org
+      // 1. Fetch Standings & Official Form from Football-Data.org
       const fdRes = await fetch(
         `https://api.football-data.org/v4/competitions/${code}/standings`,
         {
@@ -296,7 +307,11 @@ async function handleSync(request: NextRequest) {
         }
       );
 
-      if (fdRes.ok) {
+      if (fdRes.status === 429) {
+        const retryAfter = fdRes.headers.get('retry-after');
+        console.warn(`[Sync] Football-Data.org rate limit (429) on standings (${code}). Retry-After: ${retryAfter}s`);
+        syncResults.errors.push(`Football-Data.org rate limited on standings ${code}`);
+      } else if (fdRes.ok) {
         const fdData = await fdRes.json();
         const table = fdData.standings?.[0]?.table || [];
         for (const row of table) {
@@ -328,17 +343,86 @@ async function handleSync(request: NextRequest) {
         }
       }
 
-      // 2. Fetch Live Market Odds from The Odds API
+      // Rate limit safeguard: respect 10 req/min limit with sequential backoff delay
+      await sleep(700);
+
+      // 2. Fetch Upcoming Matches Only from Football-Data.org (?status=SCHEDULED,TIMED&dateFrom=...&dateTo=...)
+      try {
+        const matchesRes = await fetch(
+          `https://api.football-data.org/v4/competitions/${code}/matches?status=SCHEDULED,TIMED&dateFrom=${todayStr}&dateTo=${futureStr}`,
+          {
+            headers: { 'X-Auth-Token': footballDataKey },
+            next: { revalidate: 1800 },
+          }
+        );
+
+        if (matchesRes.status === 429) {
+          console.warn(`[Sync] Football-Data.org rate limit (429) on matches (${code})`);
+          syncResults.errors.push(`Football-Data.org rate limited on matches ${code}`);
+        } else if (matchesRes.ok) {
+          const matchesData = await matchesRes.json();
+          for (const m of (matchesData.matches || [])) {
+            // Strictly upcoming: never ingest finished or in-play games
+            if (m.status !== 'SCHEDULED' && m.status !== 'TIMED') continue;
+            const matchTimeMs = new Date(m.utcDate).getTime();
+            if (isNaN(matchTimeMs) || matchTimeMs <= now.getTime()) continue;
+
+            const homeNormId = findNormalizedTeamId(m.homeTeam?.name, code);
+            const awayNormId = findNormalizedTeamId(m.awayTeam?.name, code);
+            if (!homeNormId || !awayNormId || homeNormId === awayNormId) continue;
+
+            // Preserve official crests from match payload if available
+            if (m.homeTeam?.crest && allTeamsMap.has(homeNormId)) {
+              allTeamsMap.get(homeNormId)!.crest_url = m.homeTeam.crest;
+            }
+            if (m.awayTeam?.crest && allTeamsMap.has(awayNormId)) {
+              allTeamsMap.get(awayNormId)!.crest_url = m.awayTeam.crest;
+            }
+
+            const fixtureId = `${code.toLowerCase()}-${homeNormId}-${awayNormId}`;
+            allFixturesMap.set(fixtureId, {
+              id: fixtureId,
+              league: code,
+              home_team_id: homeNormId,
+              away_team_id: awayNormId,
+              match_time: m.utcDate,
+              status: m.status,
+            });
+          }
+        }
+      } catch (matchErr: any) {
+        console.warn(`[Sync] Non-fatal error fetching matches for ${code}:`, matchErr);
+      }
+
+      // Rate limit safeguard
+      await sleep(700);
+
+      // 3. Fetch Multi-Market Live Odds from The Odds API v4 (regions=eu, markets=h2h,spreads,totals)
       const oddsRes = await fetch(
-        `https://api.the-odds-api.com/v4/sports/${leagueInfo.oddsApiKey}/odds/?apiKey=${oddsApiKey}&regions=eu,uk&markets=h2h,spreads,totals&oddsFormat=decimal`,
+        `https://api.the-odds-api.com/v4/sports/${leagueInfo.oddsApiKey}/odds/?apiKey=${oddsApiKey}&regions=eu&markets=h2h,spreads,totals&oddsFormat=decimal`,
         {
           next: { revalidate: 1800 },
         }
       );
 
+      // Extract & track quota usage from headers
+      const reqRemaining = oddsRes.headers.get('x-requests-remaining');
+      const reqUsed = oddsRes.headers.get('x-requests-used');
+      if (reqRemaining !== null) {
+        syncResults.oddsApiQuota.remaining = parseInt(reqRemaining, 10);
+      }
+      if (reqUsed !== null) {
+        syncResults.oddsApiQuota.used = parseInt(reqUsed, 10);
+      }
+      console.log(`[Sync] The Odds API Quota for ${code}: used=${syncResults.oddsApiQuota.used}, remaining=${syncResults.oddsApiQuota.remaining}`);
+
       if (oddsRes.ok) {
         const oddsData = await oddsRes.json();
         for (const game of oddsData) {
+          // Strictly upcoming kickoff check
+          const gameTimeMs = new Date(game.commence_time).getTime();
+          if (isNaN(gameTimeMs) || gameTimeMs <= now.getTime()) continue;
+
           // Strict league-isolated matching: only match teams against this league's roster
           const homeNormId = findNormalizedTeamId(game.home_team, code);
           const awayNormId = findNormalizedTeamId(game.away_team, code);
@@ -391,6 +475,25 @@ async function handleSync(request: NextRequest) {
           }
 
           const fixtureId = `${code.toLowerCase()}-${homeNormId}-${awayNormId}`;
+
+          // Fixture matching: scope pairing strictly by 12-hour kickoff window
+          const existingFixture = allFixturesMap.get(fixtureId);
+          if (existingFixture) {
+            const diffHours = Math.abs(new Date(game.commence_time).getTime() - new Date(existingFixture.match_time).getTime()) / (1000 * 3600);
+            if (diffHours > 12) {
+              console.warn(`[Sync] Fixture ${fixtureId} kickoff mismatch > 12h: ${game.commence_time} vs ${existingFixture.match_time}`);
+            }
+          } else {
+            allFixturesMap.set(fixtureId, {
+              id: fixtureId,
+              league: code,
+              home_team_id: homeNormId,
+              away_team_id: awayNormId,
+              match_time: game.commence_time,
+              status: 'SCHEDULED',
+            });
+          }
+
           const bookmaker = game.bookmakers?.[0];
           const h2hMarket = bookmaker?.markets?.find((m: any) => m.key === 'h2h');
           const totalsMarket = bookmaker?.markets?.find((m: any) => m.key === 'totals');
@@ -408,15 +511,19 @@ async function handleSync(request: NextRequest) {
           const over35Odds = totalsMarket?.outcomes?.find((o: any) => o.name === 'Over' && o.point === 3.5)?.price || Number(Math.max(2.15, (over25Odds * 1.70)).toFixed(2));
           const under35Odds = totalsMarket?.outcomes?.find((o: any) => o.name === 'Under' && o.point === 3.5)?.price || Number(Math.max(1.24, (under25Odds * 0.72)).toFixed(2));
 
+          const findSpreadPrice = (team: string, point: number) => {
+            return spreadsMarket?.outcomes?.find((o: any) => o.name === team && o.point === point)?.price;
+          };
+
           const handicap_odds: Record<string, number> = {
-            'home_-1.5': Number((homeOdds * 1.52).toFixed(2)),
-            'away_+1.5': Number(Math.max(1.28, Number((1.1 + (0.9 / (homeOdds > 1.2 ? homeOdds : 1.2))).toFixed(2)))),
-            'home_-0.5': homeOdds,
-            'away_+0.5': Number(Math.max(1.22, Number((1.05 + 1.2 / (homeOdds > 1.1 ? homeOdds : 1.1)).toFixed(2)))),
-            'home_+0.5': Number(Math.max(1.22, Number((1.05 + 1.2 / (awayOdds > 1.1 ? awayOdds : 1.1)).toFixed(2)))),
-            'away_-0.5': awayOdds,
-            'home_+1.5': Number(Math.max(1.28, Number((1.1 + (0.9 / (awayOdds > 1.2 ? awayOdds : 1.2))).toFixed(2)))),
-            'away_-1.5': Number((awayOdds * 1.52).toFixed(2)),
+            'home_-1.5': findSpreadPrice(game.home_team, -1.5) || Number((homeOdds * 1.52).toFixed(2)),
+            'away_+1.5': findSpreadPrice(game.away_team, 1.5) || Number(Math.max(1.28, Number((1.1 + (0.9 / (homeOdds > 1.2 ? homeOdds : 1.2))).toFixed(2)))),
+            'home_-0.5': findSpreadPrice(game.home_team, -0.5) || homeOdds,
+            'away_+0.5': findSpreadPrice(game.away_team, 0.5) || Number(Math.max(1.22, Number((1.05 + 1.2 / (homeOdds > 1.1 ? homeOdds : 1.1)).toFixed(2)))),
+            'home_+0.5': findSpreadPrice(game.home_team, 0.5) || Number(Math.max(1.22, Number((1.05 + 1.2 / (awayOdds > 1.1 ? awayOdds : 1.1)).toFixed(2)))),
+            'away_-0.5': findSpreadPrice(game.away_team, -0.5) || awayOdds,
+            'home_+1.5': findSpreadPrice(game.home_team, 1.5) || Number(Math.max(1.28, Number((1.1 + (0.9 / (awayOdds > 1.2 ? awayOdds : 1.2))).toFixed(2)))),
+            'away_-1.5': findSpreadPrice(game.away_team, -1.5) || Number((awayOdds * 1.52).toFixed(2)),
           };
 
           const totals_odds: Record<string, number> = {
@@ -433,18 +540,9 @@ async function handleSync(request: NextRequest) {
             'btts_no': Number(Math.max(1.68, (under25Odds * 1.05)).toFixed(2)),
           };
 
-          allFixturesMap.set(fixtureId, {
-            id: fixtureId,
-            league: code,
-            home_team_id: homeNormId,
-            away_team_id: awayNormId,
-            match_time: game.commence_time,
-            status: 'SCHEDULED',
-          });
-
           allOddsMap.set(fixtureId, {
             fixture_id: fixtureId,
-            bookmaker: bookmaker?.title || 'Consensus',
+            bookmaker: bookmaker?.title || 'Pinnacle Consensus',
             home_odds: homeOdds,
             draw_odds: drawOdds,
             away_odds: awayOdds,
@@ -457,6 +555,7 @@ async function handleSync(request: NextRequest) {
         }
       }
 
+      await sleep(300);
       syncResults.leaguesProcessed.push(code);
     } catch (err: any) {
       console.error(`[Sync] Error processing league ${code}:`, err);
