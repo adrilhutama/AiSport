@@ -12,7 +12,7 @@ CREATE TABLE IF NOT EXISTS public.teams (
     aliases TEXT[] DEFAULT '{}',               -- Array of known alternate names for fuzzy matching
     attack_rating NUMERIC(5,2) DEFAULT 1.00,   -- Relative attacking strength (1.00 = league baseline)
     defense_rating NUMERIC(5,2) DEFAULT 1.00,  -- Relative defensive conceded multiplier (1.00 = baseline)
-    form TEXT DEFAULT 'DDDDD',                 -- Last 5 matches (W, D, L) string
+    form TEXT DEFAULT 'N/A',                   -- Last 5 matches (W, D, L) string
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );

@@ -1,11 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { revalidatePath } from 'next/cache';
 import { createServerClient } from '@/lib/supabase/server';
-import { findNormalizedTeamId, cleanTeamString } from '@/lib/team-matcher';
+import { findNormalizedTeamId, cleanTeamString, getTeamLeague } from '@/lib/team-matcher';
 import { LEAGUES_DATA, MOCK_FIXTURES, MOCK_TEAMS } from '@/lib/mock-data';
 import { LeagueCode } from '@/types';
 
 export const dynamic = 'force-dynamic';
+
+function parseTeamForm(rawForm?: string | null): string {
+  if (!rawForm) return 'N/A';
+  const cleaned = rawForm.replace(/[^WDLwdl]/g, '').toUpperCase();
+  return cleaned.length > 0 ? cleaned.slice(-5) : 'N/A';
+}
 
 export async function GET(request: NextRequest) {
   return handleSync(request);
@@ -209,7 +215,7 @@ async function handleSync(request: NextRequest) {
         const table = fdData.standings?.[0]?.table || [];
         for (const row of table) {
           const rawTeamName = row.team?.name || '';
-          const normId = findNormalizedTeamId(rawTeamName) || cleanTeamString(rawTeamName).replace(/\s+/g, '-');
+          const normId = findNormalizedTeamId(rawTeamName, code) || cleanTeamString(rawTeamName).replace(/\s+/g, '-');
           if (normId) {
             const played = Math.max(1, row.playedGames || 1);
             const goalsFor = row.goalsFor || 0;
@@ -228,7 +234,7 @@ async function handleSync(request: NextRequest) {
               aliases: [rawTeamName],
               attack_rating: attackRating,
               defense_rating: defenseRating,
-              form: row.form?.replace(/,/g, '') || 'DDDDD',
+              form: parseTeamForm(row.form),
             });
           }
         }
@@ -245,34 +251,54 @@ async function handleSync(request: NextRequest) {
       if (oddsRes.ok) {
         const oddsData = await oddsRes.json();
         for (const game of oddsData) {
-          const homeNormId = findNormalizedTeamId(game.home_team) || cleanTeamString(game.home_team).replace(/\s+/g, '-');
-          const awayNormId = findNormalizedTeamId(game.away_team) || cleanTeamString(game.away_team).replace(/\s+/g, '-');
+          // Strict league-isolated matching: only match teams against this league's roster
+          const homeNormId = findNormalizedTeamId(game.home_team, code);
+          const awayNormId = findNormalizedTeamId(game.away_team, code);
 
-          if (homeNormId && awayNormId) {
-            // Guarantee both teams are registered in allTeamsMap before referencing
-            if (!allTeamsMap.has(homeNormId)) {
-              allTeamsMap.set(homeNormId, {
-                id: homeNormId,
-                league: code,
-                name: game.home_team,
-                aliases: [game.home_team],
-                attack_rating: 1.0,
-                defense_rating: 1.0,
-                form: 'DDDDD',
-              });
-            }
+          // Both teams MUST resolve to valid teams within this competition
+          if (!homeNormId || !awayNormId) {
+            console.warn(`[Sync] League ${code}: Skipping fixture with unmapped team(s): "${game.home_team}" vs "${game.away_team}"`);
+            continue;
+          }
 
-            if (!allTeamsMap.has(awayNormId)) {
-              allTeamsMap.set(awayNormId, {
-                id: awayNormId,
-                league: code,
-                name: game.away_team,
-                aliases: [game.away_team],
-                attack_rating: 1.0,
-                defense_rating: 1.0,
-                form: 'DDDDD',
-              });
-            }
+          if (homeNormId === awayNormId) {
+            console.warn(`[Sync] League ${code}: Skipping fixture with identical team resolution: ${homeNormId}`);
+            continue;
+          }
+
+          // Verify domestic league alignment
+          const homeLeague = getTeamLeague(homeNormId) || allTeamsMap.get(homeNormId)?.league;
+          const awayLeague = getTeamLeague(awayNormId) || allTeamsMap.get(awayNormId)?.league;
+
+          if ((homeLeague && homeLeague !== code) || (awayLeague && awayLeague !== code)) {
+            console.warn(`[Sync] Blocked cross-league pairing in ${code}: ${homeNormId} (${homeLeague}) vs ${awayNormId} (${awayLeague})`);
+            continue;
+          }
+
+          // Guarantee both teams are registered in allTeamsMap before referencing
+          if (!allTeamsMap.has(homeNormId)) {
+            allTeamsMap.set(homeNormId, {
+              id: homeNormId,
+              league: code,
+              name: game.home_team,
+              aliases: [game.home_team],
+              attack_rating: 1.0,
+              defense_rating: 1.0,
+              form: 'N/A',
+            });
+          }
+
+          if (!allTeamsMap.has(awayNormId)) {
+            allTeamsMap.set(awayNormId, {
+              id: awayNormId,
+              league: code,
+              name: game.away_team,
+              aliases: [game.away_team],
+              attack_rating: 1.0,
+              defense_rating: 1.0,
+              form: 'N/A',
+            });
+          }
 
             const fixtureId = `${code.toLowerCase()}-${homeNormId}-${awayNormId}`;
             const bookmaker = game.bookmakers?.[0];
@@ -304,7 +330,6 @@ async function handleSync(request: NextRequest) {
               over_25_odds: over25Odds,
               under_25_odds: under25Odds,
             });
-          }
         }
       }
 

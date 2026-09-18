@@ -9,7 +9,7 @@ import { MatchCard } from '@/components/MatchCard';
 import { AIParlayCard } from '@/components/AIParlayCard';
 import { HitRateTracker } from '@/components/HitRateTracker';
 import { BettingSlip } from '@/components/BettingSlip';
-import { Sparkles, Layers, TrendingUp, Cpu, Info, Database } from 'lucide-react';
+import { Sparkles, Layers, TrendingUp, Cpu, Info, Database, Calendar } from 'lucide-react';
 
 interface DashboardClientProps {
   initialFixtures: Fixture[];
@@ -31,6 +31,7 @@ export const DashboardClient: React.FC<DashboardClientProps> = ({
   const [lastSyncTime, setLastSyncTime] = useState<string>('Live (Ready)');
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [syncToast, setSyncToast] = useState<string | null>(null);
+  const [showAllMatches, setShowAllMatches] = useState<boolean>(false);
 
   // Sync state with incoming server props when router.refresh() resolves
   useEffect(() => {
@@ -45,11 +46,29 @@ export const DashboardClient: React.FC<DashboardClientProps> = ({
     }
   }, [initialParlays]);
 
+  // Chronologically sort all fixtures by kickoff match_time
+  const sortedFixtures = [...fixtures].sort(
+    (a, b) => new Date(a.match_time).getTime() - new Date(b.match_time).getTime()
+  );
+
   // Filter fixtures according to selected league
-  const filteredFixtures =
+  const leagueFilteredFixtures =
     selectedLeague === 'ALL'
-      ? fixtures
-      : fixtures.filter((f) => f.league === selectedLeague);
+      ? sortedFixtures
+      : sortedFixtures.filter((f) => f.league === selectedLeague);
+
+  // Gameweek / Upcoming round grouping: limit to max 10 matches per league by default
+  const displayedFixtures = showAllMatches
+    ? leagueFilteredFixtures
+    : selectedLeague === 'ALL'
+    ? (() => {
+        const leagueCounts: Record<string, number> = {};
+        return leagueFilteredFixtures.filter((f) => {
+          leagueCounts[f.league] = (leagueCounts[f.league] || 0) + 1;
+          return leagueCounts[f.league] <= 10;
+        });
+      })()
+    : leagueFilteredFixtures.slice(0, 10);
 
   // Calculate counts for league badges
   const fixtureCounts: Record<LeagueCode | 'ALL', number> = {
@@ -276,9 +295,29 @@ export const DashboardClient: React.FC<DashboardClientProps> = ({
               />
             </div>
 
+            {/* Gameweek Round Indicator & View Toggle */}
+            {displayedFixtures.length > 0 && (
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs font-mono text-slate-400 bg-terminal-900/60 border border-slate-800/80 px-3.5 py-2 rounded-xl">
+                <div className="flex items-center gap-2">
+                  <Calendar className="w-3.5 h-3.5 text-cyan-400" />
+                  <span>
+                    Round: <strong className="text-white">{showAllMatches ? 'All Scheduled Matches' : 'Upcoming Matchday Round'}</strong> ({displayedFixtures.length} matches sorted by kickoff)
+                  </span>
+                </div>
+                {leagueFilteredFixtures.length > 10 && (
+                  <button
+                    onClick={() => setShowAllMatches(!showAllMatches)}
+                    className="text-cyan-400 hover:text-cyan-300 font-semibold hover:underline text-left sm:text-right"
+                  >
+                    {showAllMatches ? 'Show Upcoming Round Only (Max 10)' : `Show All ${leagueFilteredFixtures.length} Matches`}
+                  </button>
+                )}
+              </div>
+            )}
+
             {/* Match Cards Grid */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {filteredFixtures.map((fixture) => (
+              {displayedFixtures.map((fixture) => (
                 <MatchCard
                   key={fixture.id}
                   fixture={fixture}
@@ -288,7 +327,7 @@ export const DashboardClient: React.FC<DashboardClientProps> = ({
               ))}
             </div>
 
-            {filteredFixtures.length === 0 && (
+            {displayedFixtures.length === 0 && (
               <div className="bg-terminal-900 border border-slate-800 rounded-xl p-12 text-center">
                 <p className="text-sm text-slate-400">
                   No upcoming fixtures found for the selected league filter.

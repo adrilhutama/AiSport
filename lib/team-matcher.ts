@@ -3,114 +3,139 @@
  * Links disparate team naming conventions between Football-Data.org and The Odds API.
  */
 
-// Normalized team dictionary with known variations and aliases
-export const TEAM_ALIASES: Record<string, string[]> = {
-  // --- PREMIER LEAGUE ---
-  'arsenal': ['arsenal', 'arsenal fc'],
-  'aston-villa': ['aston villa', 'aston villa fc', 'villa'],
-  'bournemouth': ['bournemouth', 'afc bournemouth'],
-  'brentford': ['brentford', 'brentford fc'],
-  'brighton': ['brighton', 'brighton and hove albion', 'brighton & hove albion', 'brighton & hove albion fc'],
-  'chelsea': ['chelsea', 'chelsea fc'],
-  'crystal-palace': ['crystal palace', 'crystal palace fc'],
-  'everton': ['everton', 'everton fc'],
-  'fulham': ['fulham', 'fulham fc'],
-  'ipswich': ['ipswich town', 'ipswich', 'ipswich town fc'],
-  'leicester': ['leicester city', 'leicester', 'leicester city fc'],
-  'liverpool': ['liverpool', 'liverpool fc'],
-  'manchester-city': ['manchester city', 'man city', 'manchester city fc'],
-  'manchester-united': ['manchester united', 'man united', 'man utd', 'manchester united fc'],
-  'newcastle': ['newcastle united', 'newcastle', 'newcastle united fc'],
-  'nottingham-forest': ['nottingham forest', 'nottingham forest fc', 'nottm forest'],
-  'southampton': ['southampton', 'southampton fc'],
-  'tottenham': ['tottenham hotspur', 'tottenham', 'tottenham hotspur fc', 'spurs'],
-  'west-ham': ['west ham united', 'west ham', 'west ham united fc'],
-  'wolves': ['wolverhampton wanderers', 'wolves', 'wolverhampton wanderers fc', 'wolverhampton'],
+import { LeagueCode } from '@/types';
 
-  // --- LA LIGA ---
-  'real-madrid': ['real madrid', 'real madrid cf'],
-  'barcelona': ['barcelona', 'fc barcelona'],
-  'atletico-madrid': ['atletico madrid', 'atletico de madrid', 'club atletico de madrid'],
-  'athletic-bilbao': ['athletic bilbao', 'athletic club', 'athletic club bilbao'],
-  'real-sociedad': ['real sociedad', 'real sociedad de futbol'],
-  'villarreal': ['villarreal', 'villarreal cf'],
-  'real-betis': ['real betis', 'real betis balompie', 'betis'],
-  'sevilla': ['sevilla', 'sevilla fc'],
-  'girona': ['girona', 'girona fc'],
-  'celta-vigo': ['celta vigo', 'rc celta de vigo', 'celta de vigo'],
-  'osasuna': ['osasuna', 'ca osasuna'],
-  'valencia': ['valencia', 'valencia cf'],
-  'mallorca': ['mallorca', 'rcd mallorca'],
-  'rayo-vallecano': ['rayo vallecano'],
-  'alaves': ['alaves', 'deportivo alaves'],
-  'getafe': ['getafe', 'getafe cf'],
-  'las-palmas': ['las palmas', 'ud las palmas'],
-  'leganes': ['leganes', 'cd leganes'],
-  'espanyol': ['espanyol', 'rcd espanyol de barcelona'],
-  'valladolid': ['real valladolid', 'valladolid', 'real valladolid cf'],
+export const TEAM_ALIASES_BY_LEAGUE: Record<LeagueCode, Record<string, string[]>> = {
+  PL: {
+    'arsenal': ['arsenal', 'arsenal fc'],
+    'aston-villa': ['aston villa', 'aston villa fc', 'villa'],
+    'bournemouth': ['bournemouth', 'afc bournemouth'],
+    'brentford': ['brentford', 'brentford fc'],
+    'brighton': ['brighton', 'brighton and hove albion', 'brighton & hove albion', 'brighton & hove albion fc'],
+    'chelsea': ['chelsea', 'chelsea fc'],
+    'crystal-palace': ['crystal palace', 'crystal palace fc'],
+    'everton': ['everton', 'everton fc'],
+    'fulham': ['fulham', 'fulham fc'],
+    'ipswich': ['ipswich town', 'ipswich', 'ipswich town fc'],
+    'leicester': ['leicester city', 'leicester', 'leicester city fc'],
+    'liverpool': ['liverpool', 'liverpool fc'],
+    'manchester-city': ['manchester city', 'man city', 'manchester city fc'],
+    'manchester-united': ['manchester united', 'man united', 'man utd', 'manchester united fc'],
+    'newcastle': ['newcastle united', 'newcastle', 'newcastle united fc'],
+    'nottingham-forest': ['nottingham forest', 'nottingham forest fc', 'nottm forest'],
+    'southampton': ['southampton', 'southampton fc'],
+    'tottenham': ['tottenham hotspur', 'tottenham', 'tottenham hotspur fc', 'spurs'],
+    'west-ham': ['west ham united', 'west ham', 'west ham united fc'],
+    'wolves': ['wolverhampton wanderers', 'wolves', 'wolverhampton wanderers fc', 'wolverhampton'],
+  },
 
-  // --- SERIE A ---
-  'inter': ['inter milan', 'internazionale', 'inter', 'fc internazionale milano'],
-  'ac-milan': ['ac milan', 'milan'],
-  'juventus': ['juventus', 'juventus fc', 'juve'],
-  'napoli': ['napoli', 'ssc napoli'],
-  'atalanta': ['atalanta', 'atalanta bc'],
-  'roma': ['roma', 'as roma'],
-  'lazio': ['lazio', 'ss lazio'],
-  'fiorentina': ['fiorentina', 'acf fiorentina'],
-  'bologna': ['bologna', 'bologna fc 1909'],
-  'torino': ['torino', 'torino fc'],
-  'udinese': ['udinese', 'udinese calcio'],
-  'genoa': ['genoa', 'genoa cfc'],
-  'parma': ['parma', 'parma calcio 1913'],
-  'verona': ['hellas verona', 'verona', 'hellas verona fc'],
-  'como': ['como', 'como 1907'],
-  'cagliari': ['cagliari', 'cagliari calcio'],
-  'empoli': ['empoli', 'empoli fc'],
-  'lecce': ['lecce', 'us lecce'],
-  'monza': ['monza', 'ac monza'],
-  'venezia': ['venezia', 'venezia fc'],
+  PD: {
+    'real-madrid': ['real madrid', 'real madrid cf'],
+    'barcelona': ['barcelona', 'fc barcelona'],
+    'atletico-madrid': ['atletico madrid', 'atletico de madrid', 'club atletico de madrid'],
+    'athletic-bilbao': ['athletic bilbao', 'athletic club', 'athletic club bilbao'],
+    'real-sociedad': ['real sociedad', 'real sociedad de futbol'],
+    'villarreal': ['villarreal', 'villarreal cf'],
+    'real-betis': ['real betis', 'real betis balompie', 'betis'],
+    'sevilla': ['sevilla', 'sevilla fc'],
+    'girona': ['girona', 'girona fc'],
+    'celta-vigo': ['celta vigo', 'rc celta de vigo', 'celta de vigo'],
+    'osasuna': ['osasuna', 'ca osasuna'],
+    'valencia': ['valencia', 'valencia cf'],
+    'mallorca': ['mallorca', 'rcd mallorca'],
+    'rayo-vallecano': ['rayo vallecano'],
+    'alaves': ['alaves', 'deportivo alaves'],
+    'getafe': ['getafe', 'getafe cf'],
+    'las-palmas': ['las palmas', 'ud las palmas'],
+    'leganes': ['leganes', 'cd leganes'],
+    'espanyol': ['espanyol', 'rcd espanyol de barcelona'],
+    'valladolid': ['real valladolid', 'valladolid', 'real valladolid cf'],
+  },
 
-  // --- BUNDESLIGA ---
-  'bayern-munich': ['bayern munich', 'bayern münchen', 'fc bayern münchen', 'bayern'],
-  'leverkusen': ['bayer leverkusen', 'bayer 04 leverkusen', 'leverkusen'],
-  'dortmund': ['borussia dortmund', 'dortmund', 'bvb'],
-  'rb-leipzig': ['rb leipzig', 'leipzig', 'rasenballsport leipzig'],
-  'stuttgart': ['vfb stuttgart', 'stuttgart'],
-  'eintracht-frankfurt': ['eintracht frankfurt', 'frankfurt'],
-  'freiburg': ['sc freiburg', 'freiburg'],
-  'hoffenheim': ['tsg hoffenheim', 'hoffenheim', 'tsg 1899 hoffenheim'],
-  'werder-bremen': ['werder bremen', 'sv werder bremen', 'bremen'],
-  'monchengladbach': ['borussia monchengladbach', 'borussia mönchengladbach', 'mönchengladbach', 'monchengladbach'],
-  'union-berlin': ['union berlin', '1. fc union berlin'],
-  'wolfsburg': ['vfl wolfsburg', 'wolfsburg'],
-  'augsburg': ['fc augsburg', 'augsburg'],
-  'mainz': ['mainz', '1. fsv mainz 05', 'fsv mainz 05'],
-  'heidenheim': ['1. fc heidenheim 1846', 'heidenheim', '1. fc heidenheim'],
-  'st-pauli': ['fc st. pauli', 'st. pauli', 'st pauli'],
-  'bochum': ['vfl bochum', 'vfl bochum 1848', 'bochum'],
-  'holstein-kiel': ['holstein kiel', 'kiel'],
+  SA: {
+    'inter': ['inter milan', 'internazionale', 'inter', 'fc internazionale milano'],
+    'ac-milan': ['ac milan', 'milan'],
+    'juventus': ['juventus', 'juventus fc', 'juve'],
+    'napoli': ['napoli', 'ssc napoli'],
+    'atalanta': ['atalanta', 'atalanta bc'],
+    'roma': ['roma', 'as roma'],
+    'lazio': ['lazio', 'ss lazio'],
+    'fiorentina': ['fiorentina', 'acf fiorentina'],
+    'bologna': ['bologna', 'bologna fc 1909'],
+    'torino': ['torino', 'torino fc'],
+    'udinese': ['udinese', 'udinese calcio'],
+    'genoa': ['genoa', 'genoa cfc'],
+    'parma': ['parma', 'parma calcio 1913'],
+    'verona': ['hellas verona', 'verona', 'hellas verona fc'],
+    'como': ['como', 'como 1907'],
+    'cagliari': ['cagliari', 'cagliari calcio'],
+    'empoli': ['empoli', 'empoli fc'],
+    'lecce': ['lecce', 'us lecce'],
+    'monza': ['monza', 'ac monza'],
+    'venezia': ['venezia', 'venezia fc'],
+  },
 
-  // --- LIGUE 1 ---
-  'psg': ['paris saint-germain', 'paris saint germain', 'psg', 'paris saint-germain fc'],
-  'marseille': ['olympique de marseille', 'marseille', 'om'],
-  'monaco': ['as monaco', 'monaco', 'as monaco fc'],
-  'lille': ['lille', 'losc lille', 'losc'],
-  'lyon': ['olympique lyonnais', 'lyon', 'ol'],
-  'lens': ['rc lens', 'lens'],
-  'nice': ['ogc nice', 'nice'],
-  'rennes': ['stade rennais', 'rennes', 'stade rennais fc'],
-  'brest': ['stade brestois 29', 'brest', 'stade brestois'],
-  'reims': ['stade de reims', 'reims'],
-  'strasbourg': ['rc strasbourg alsace', 'strasbourg', 'rc strasbourg'],
-  'toulouse': ['toulouse', 'toulouse fc'],
-  'nantes': ['fc nantes', 'nantes'],
-  'montpellier': ['montpellier', 'montpellier hsc'],
-  'le-havre': ['le havre', 'le havre ac'],
-  'auxerre': ['aj auxerre', 'auxerre'],
-  'angers': ['angers sco', 'angers'],
-  'saint-etienne': ['as saint-étienne', 'as saint-etienne', 'saint-étienne', 'saint-etienne']
+  BL1: {
+    'bayern-munich': ['bayern munich', 'bayern münchen', 'fc bayern münchen', 'bayern'],
+    'leverkusen': ['bayer leverkusen', 'bayer 04 leverkusen', 'leverkusen'],
+    'dortmund': ['borussia dortmund', 'dortmund', 'bvb'],
+    'rb-leipzig': ['rb leipzig', 'leipzig', 'rasenballsport leipzig'],
+    'stuttgart': ['vfb stuttgart', 'stuttgart'],
+    'eintracht-frankfurt': ['eintracht frankfurt', 'frankfurt'],
+    'freiburg': ['sc freiburg', 'freiburg'],
+    'hoffenheim': ['tsg hoffenheim', 'hoffenheim', 'tsg 1899 hoffenheim'],
+    'werder-bremen': ['werder bremen', 'sv werder bremen', 'bremen'],
+    'monchengladbach': ['borussia monchengladbach', 'borussia mönchengladbach', 'mönchengladbach', 'monchengladbach'],
+    'union-berlin': ['union berlin', '1. fc union berlin'],
+    'wolfsburg': ['vfl wolfsburg', 'wolfsburg'],
+    'augsburg': ['fc augsburg', 'augsburg'],
+    'mainz': ['mainz', '1. fsv mainz 05', 'fsv mainz 05'],
+    'heidenheim': ['1. fc heidenheim 1846', 'heidenheim', '1. fc heidenheim'],
+    'st-pauli': ['fc st. pauli', 'st. pauli', 'st pauli'],
+    'bochum': ['vfl bochum', 'vfl bochum 1848', 'bochum'],
+    'holstein-kiel': ['holstein kiel', 'kiel'],
+    'hamburger-sv': ['hamburger sv', 'hsv', 'hamburg'],
+  },
+
+  FL1: {
+    'psg': ['paris saint-germain', 'paris saint germain', 'psg', 'paris saint-germain fc'],
+    'marseille': ['olympique de marseille', 'marseille', 'om'],
+    'monaco': ['as monaco', 'monaco', 'as monaco fc'],
+    'lille': ['lille', 'losc lille', 'losc'],
+    'lyon': ['olympique lyonnais', 'lyon', 'ol'],
+    'lens': ['rc lens', 'lens'],
+    'nice': ['ogc nice', 'nice'],
+    'rennes': ['stade rennais', 'rennes', 'stade rennais fc'],
+    'brest': ['stade brestois 29', 'brest', 'stade brestois'],
+    'reims': ['stade de reims', 'reims'],
+    'strasbourg': ['rc strasbourg alsace', 'strasbourg', 'rc strasbourg'],
+    'toulouse': ['toulouse', 'toulouse fc'],
+    'nantes': ['fc nantes', 'nantes'],
+    'montpellier': ['montpellier', 'montpellier hsc'],
+    'le-havre': ['le havre', 'le havre ac'],
+    'auxerre': ['aj auxerre', 'auxerre'],
+    'angers': ['angers sco', 'angers'],
+    'saint-etienne': ['as saint-étienne', 'as saint-etienne', 'saint-étienne', 'saint-etienne'],
+  },
 };
+
+// Flattened dictionary of all teams for backward compatibility
+export const TEAM_ALIASES: Record<string, string[]> = Object.values(TEAM_ALIASES_BY_LEAGUE).reduce(
+  (acc, leagueDict) => Object.assign(acc, leagueDict),
+  {}
+);
+
+/**
+ * Identify which league a team ID belongs to
+ */
+export function getTeamLeague(teamId: string): LeagueCode | undefined {
+  for (const [league, teams] of Object.entries(TEAM_ALIASES_BY_LEAGUE)) {
+    if (teams[teamId]) {
+      return league as LeagueCode;
+    }
+  }
+  return undefined;
+}
 
 /**
  * Standardize string by lowercasing, removing special symbols, and trimming
@@ -157,8 +182,8 @@ export function stringSimilarity(s1: string, s2: string): number {
   if (c1 === c2) return 1.0;
   if (!c1.length || !c2.length) return 0.0;
 
-  // Exact substring check
-  if (c1.includes(c2) || c2.includes(c1)) {
+  // Exact substring check only if length is substantial (> 3 chars) to avoid false positives
+  if (c1.length > 3 && c2.length > 3 && (c1.includes(c2) || c2.includes(c1))) {
     const minLen = Math.min(c1.length, c2.length);
     const maxLen = Math.max(c1.length, c2.length);
     return Math.max(0.85, minLen / maxLen);
@@ -170,14 +195,22 @@ export function stringSimilarity(s1: string, s2: string): number {
 }
 
 /**
- * Match a raw team name against the normalized dictionary
+ * Match a raw team name against the normalized dictionary.
+ * If leagueCode is provided, search is STRICTLY isolated to that league.
  * Returns the normalized canonical ID (e.g., 'arsenal') or undefined if no confident match.
  */
-export function findNormalizedTeamId(rawName: string): string | undefined {
+export function findNormalizedTeamId(rawName: string, leagueCode?: LeagueCode): string | undefined {
   const cleaned = cleanTeamString(rawName);
+  if (!cleaned) return undefined;
+
+  const targetDict: Record<string, string[]> = leagueCode
+    ? TEAM_ALIASES_BY_LEAGUE[leagueCode] || {}
+    : TEAM_ALIASES;
+
+  const tokens = cleaned.split(/\s+/);
 
   // 1. Exact alias match
-  for (const [id, aliases] of Object.entries(TEAM_ALIASES)) {
+  for (const [id, aliases] of Object.entries(targetDict)) {
     for (const alias of aliases) {
       const cleanedAlias = cleanTeamString(alias);
       if (cleaned === cleanedAlias) {
@@ -186,19 +219,27 @@ export function findNormalizedTeamId(rawName: string): string | undefined {
     }
   }
 
-  // 2. Substring or token match
-  for (const [id, aliases] of Object.entries(TEAM_ALIASES)) {
+  // 2. Token / word boundary match (handles abbreviations like 'bvb', 'om', 'ol' safely)
+  for (const [id, aliases] of Object.entries(targetDict)) {
     for (const alias of aliases) {
       const cleanedAlias = cleanTeamString(alias);
-      if (cleaned.includes(cleanedAlias) || cleanedAlias.includes(cleaned)) {
-        return id;
+      if (cleanedAlias.length <= 3) {
+        // Only match short aliases as exact token words, NEVER as arbitrary substrings
+        if (tokens.includes(cleanedAlias)) {
+          return id;
+        }
+      } else {
+        // Longer alias: safe for whole-token or substantial substring
+        if (tokens.includes(cleanedAlias) || cleaned.includes(cleanedAlias) || cleanedAlias.includes(cleaned)) {
+          return id;
+        }
       }
     }
   }
 
   // 3. Fuzzy similarity fallback (threshold >= 0.75)
   let bestMatch: { id: string; score: number } = { id: '', score: 0 };
-  for (const [id, aliases] of Object.entries(TEAM_ALIASES)) {
+  for (const [id, aliases] of Object.entries(targetDict)) {
     for (const alias of aliases) {
       const score = stringSimilarity(cleaned, alias);
       if (score > bestMatch.score) {

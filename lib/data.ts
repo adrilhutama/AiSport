@@ -73,7 +73,7 @@ export async function getOddsMatrixData(): Promise<{
         aliases: [],
         attack_rating: 1.15,
         defense_rating: 0.95,
-        form: 'DDDDD',
+        form: 'N/A',
       };
 
       const awayTeam = teamMap.get(f.away_team_id) || {
@@ -83,7 +83,7 @@ export async function getOddsMatrixData(): Promise<{
         aliases: [],
         attack_rating: 1.05,
         defense_rating: 1.05,
-        form: 'DDDDD',
+        form: 'N/A',
       };
 
       const marketOdds = oddsMap.get(f.id) || {

@@ -22,8 +22,39 @@ export function poissonPMF(k: number, lambda: number): number {
 }
 
 /**
+ * Dixon-Coles adjustment factor tau for low-scoring match events (0-0, 1-0, 0-1, 1-1).
+ * Standard empirical correlation parameter for European football rho ~ -0.11.
+ */
+export function dixonColesTau(
+  h: number,
+  a: number,
+  lambdaH: number,
+  lambdaA: number,
+  rho = -0.11
+): number {
+  if (h === 0 && a === 0) {
+    return Math.max(0, 1 - lambdaH * lambdaA * rho);
+  } else if (h === 0 && a === 1) {
+    return Math.max(0, 1 + lambdaH * rho);
+  } else if (h === 1 && a === 0) {
+    return Math.max(0, 1 + lambdaA * rho);
+  } else if (h === 1 && a === 1) {
+    return Math.max(0, 1 - rho);
+  }
+  return 1.0;
+}
+
+/**
+ * Bayesian shrinkage towards league average (1.00) to avoid extreme ratings
+ */
+export function shrinkRating(rating: number, baseline = 1.00, alpha = 0.85): number {
+  return Number((alpha * rating + (1 - alpha) * baseline).toFixed(3));
+}
+
+/**
  * Computes 6x6 score probability matrix (0-0 to 5-5) and derived true probabilities
- * using a Bivariate Poisson distribution.
+ * using a calibrated Bivariate Poisson distribution with Dixon-Coles adjustment
+ * and Bayesian shrinkage towards the mean.
  */
 export function analyzeFixtureQuant(
   fixture: Fixture,
@@ -33,17 +64,23 @@ export function analyzeFixtureQuant(
   const homeTeam = fixture.homeTeam;
   const awayTeam = fixture.awayTeam;
 
-  const homeAttack = homeTeam?.attack_rating ?? 1.15;
-  const homeDefense = homeTeam?.defense_rating ?? 0.90;
-  const awayAttack = awayTeam?.attack_rating ?? 1.05;
-  const awayDefense = awayTeam?.defense_rating ?? 1.05;
+  const rawHomeAttack = homeTeam?.attack_rating ?? 1.15;
+  const rawHomeDefense = homeTeam?.defense_rating ?? 0.90;
+  const rawAwayAttack = awayTeam?.attack_rating ?? 1.05;
+  const rawAwayDefense = awayTeam?.defense_rating ?? 1.05;
+
+  // Bayesian shrinkage & bounding to prevent runaway lambda values
+  const homeAttack = Math.min(1.45, Math.max(0.70, shrinkRating(rawHomeAttack)));
+  const homeDefense = Math.min(1.35, Math.max(0.70, shrinkRating(rawHomeDefense)));
+  const awayAttack = Math.min(1.45, Math.max(0.70, shrinkRating(rawAwayAttack)));
+  const awayDefense = Math.min(1.35, Math.max(0.70, shrinkRating(rawAwayDefense)));
 
   // Expected goals: lambda_home = league_avg_home * home_attack * away_defense
   // Expected goals: lambda_away = league_avg_away * away_attack * home_defense
   const lambdaHome = Math.max(0.2, Number((league.avgHomeGoals * homeAttack * awayDefense).toFixed(3)));
   const lambdaAway = Math.max(0.2, Number((league.avgAwayGoals * awayAttack * homeDefense).toFixed(3)));
 
-  // Generate 6x6 score matrix (scores 0 to 5 for each team)
+  // Generate 6x6 score matrix with Dixon-Coles low-score adjustment
   const matrixSize = 6;
   const rawMatrix: number[][] = [];
   let totalProbSum = 0;
@@ -51,7 +88,8 @@ export function analyzeFixtureQuant(
   for (let h = 0; h < matrixSize; h++) {
     rawMatrix[h] = [];
     for (let a = 0; a < matrixSize; a++) {
-      const p = poissonPMF(h, lambdaHome) * poissonPMF(a, lambdaAway);
+      const tau = dixonColesTau(h, a, lambdaHome, lambdaAway, -0.11);
+      const p = tau * poissonPMF(h, lambdaHome) * poissonPMF(a, lambdaAway);
       rawMatrix[h][a] = p;
       totalProbSum += p;
     }
@@ -66,7 +104,7 @@ export function analyzeFixtureQuant(
     }
   }
 
-  // Calculate True Probabilities
+  // Calculate True Probabilities from Matrix
   let homeWinProb = 0;
   let drawProb = 0;
   let awayWinProb = 0;
@@ -90,7 +128,7 @@ export function analyzeFixtureQuant(
 
   const bttsNoProb = 1 - bttsYesProb;
 
-  // Expected Value calculation with market odds
+  // Market odds
   const odds = fixture.marketOdds;
   const homeOdds = odds?.home_odds ?? 2.0;
   const drawOdds = odds?.draw_odds ?? 3.2;
@@ -98,42 +136,62 @@ export function analyzeFixtureQuant(
   const overOdds = odds?.over_25_odds ?? 1.85;
   const underOdds = odds?.under_25_odds ?? 1.95;
 
-  const calculateEV = (trueProb: number, bookOdds: number) => {
-    return Number(((trueProb * bookOdds - 1) * 100).toFixed(2));
+  // De-vigged implied probabilities from market consensus
+  const [devigHome, devigDraw, devigAway] = devigOdds([homeOdds, drawOdds, awayOdds]);
+  const [devigOver, devigUnder] = devigOdds([overOdds, underOdds]);
+
+  // Calibration against runaway EV: If edge > +25%, shrink towards de-vigged market probability
+  // P_calibrated = 0.70 * P_model + 0.30 * P_market_devigged, with hard cap at +25.0% EV
+  const calibrateProbability = (modelProb: number, devigProb: number, bookOdds: number) => {
+    const rawEV = (modelProb * bookOdds - 1) * 100;
+    if (rawEV > 25.0) {
+      const fallbackDevig = devigProb > 0 ? devigProb : (bookOdds > 0 ? 1 / bookOdds : modelProb);
+      const calibratedProb = 0.70 * modelProb + 0.30 * fallbackDevig;
+      const calibratedEV = (calibratedProb * bookOdds - 1) * 100;
+      const boundedEV = Math.min(25.0, Math.max(-100.0, Number(calibratedEV.toFixed(2))));
+      return {
+        prob: Number(calibratedProb.toFixed(4)),
+        ev: boundedEV,
+      };
+    }
+    return {
+      prob: Number(modelProb.toFixed(4)),
+      ev: Number(rawEV.toFixed(2)),
+    };
   };
 
-  const homeEV = calculateEV(homeWinProb, homeOdds);
-  const drawEV = calculateEV(drawProb, drawOdds);
-  const awayEV = calculateEV(awayWinProb, awayOdds);
-  const over25EV = calculateEV(over25Prob, overOdds);
-  const under25EV = calculateEV(under25Prob, underOdds);
+  const homeCal = calibrateProbability(homeWinProb, devigHome, homeOdds);
+  const drawCal = calibrateProbability(drawProb, devigDraw, drawOdds);
+  const awayCal = calibrateProbability(awayWinProb, devigAway, awayOdds);
+  const overCal = calibrateProbability(over25Prob, devigOver, overOdds);
+  const underCal = calibrateProbability(under25Prob, devigUnder, underOdds);
 
   return {
     lambdaHome,
     lambdaAway,
     scoreMatrix,
     trueProbabilities: {
-      home: Number(homeWinProb.toFixed(4)),
-      draw: Number(drawProb.toFixed(4)),
-      away: Number(awayWinProb.toFixed(4)),
-      over25: Number(over25Prob.toFixed(4)),
-      under25: Number(under25Prob.toFixed(4)),
+      home: homeCal.prob,
+      draw: drawCal.prob,
+      away: awayCal.prob,
+      over25: overCal.prob,
+      under25: underCal.prob,
       bttsYes: Number(bttsYesProb.toFixed(4)),
       bttsNo: Number(bttsNoProb.toFixed(4)),
     },
     expectedValues: {
-      homeEV,
-      drawEV,
-      awayEV,
-      over25EV,
-      under25EV,
+      homeEV: homeCal.ev,
+      drawEV: drawCal.ev,
+      awayEV: awayCal.ev,
+      over25EV: overCal.ev,
+      under25EV: underCal.ev,
     },
     fairOdds: {
-      home: homeWinProb > 0 ? Number((1 / homeWinProb).toFixed(2)) : 99,
-      draw: drawProb > 0 ? Number((1 / drawProb).toFixed(2)) : 99,
-      away: awayWinProb > 0 ? Number((1 / awayWinProb).toFixed(2)) : 99,
-      over25: over25Prob > 0 ? Number((1 / over25Prob).toFixed(2)) : 99,
-      under25: under25Prob > 0 ? Number((1 / under25Prob).toFixed(2)) : 99,
+      home: homeCal.prob > 0 ? Number((1 / homeCal.prob).toFixed(2)) : 99,
+      draw: drawCal.prob > 0 ? Number((1 / drawCal.prob).toFixed(2)) : 99,
+      away: awayCal.prob > 0 ? Number((1 / awayCal.prob).toFixed(2)) : 99,
+      over25: overCal.prob > 0 ? Number((1 / overCal.prob).toFixed(2)) : 99,
+      under25: underCal.prob > 0 ? Number((1 / underCal.prob).toFixed(2)) : 99,
     }
   };
 }

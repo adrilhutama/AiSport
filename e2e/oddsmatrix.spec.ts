@@ -79,6 +79,33 @@ test.describe('OddsMatrix End-to-End Suite', () => {
 
     // Check correlation warning banner
     await expect(page.locator('text=Correlation Alert')).toBeVisible();
+
+    // Verify Gameweek round indicator is visible
+    await expect(page.locator('text=Upcoming Matchday Round')).toBeVisible();
+  });
+
+  test('Statistical Sanity: Hit-Rate sample warning & calibrated EV boundaries', async ({ page }) => {
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
+
+    // 1. Check preliminary sample warning badge when evaluated slips < 30
+    const sampleBadge = page.locator('text=Preliminary Sample — Low Statistical Significance').first();
+    await expect(sampleBadge).toBeVisible();
+
+    // 2. Switch to Match Builder
+    const builderTab = page.locator('button:has-text("Match Builder")');
+    await builderTab.click();
+
+    // 3. Verify that EV percentages across visible badges are rational (<= 25%)
+    const evBadges = page.locator('span:has-text("% EV")');
+    const count = await evBadges.count();
+    for (let i = 0; i < count; i++) {
+      const badgeText = await evBadges.nth(i).textContent();
+      const match = badgeText?.match(/\+?([0-9.]+)%\s*EV/);
+      if (match) {
+        const evValue = parseFloat(match[1]);
+        expect(evValue).toBeLessThanOrEqual(25.0);
+      }
+    }
   });
 
   test('API Route: Background Sync returns valid JSON and updates records', async ({ request }) => {

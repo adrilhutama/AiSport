@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { AIParlay } from '@/types';
-import { Award, TrendingUp, CheckCircle, Percent } from 'lucide-react';
+import { Award, TrendingUp, CheckCircle, Percent, AlertTriangle } from 'lucide-react';
 
 interface HitRateTrackerProps {
   parlays: AIParlay[];
@@ -13,6 +13,8 @@ export const HitRateTracker: React.FC<HitRateTrackerProps> = ({ parlays }) => {
   const wonCount = parlays.filter((p) => p.status === 'won').length;
   const lostCount = parlays.filter((p) => p.status === 'lost').length;
   const pendingCount = parlays.filter((p) => p.status === 'pending').length;
+
+  const isSmallSample = finished.length < 30;
 
   const hitRate =
     finished.length > 0 ? Number(((wonCount / finished.length) * 100).toFixed(1)) : 0;
@@ -36,9 +38,17 @@ export const HitRateTracker: React.FC<HitRateTrackerProps> = ({ parlays }) => {
             <Award className="w-3.5 h-3.5" />
             Quantitative Track Record
           </div>
-          <h3 className="text-base font-bold text-white mt-0.5">
-            AI Curated Parlay Historical Hit-Rate
-          </h3>
+          <div className="flex flex-wrap items-center gap-2.5 mt-0.5">
+            <h3 className="text-base font-bold text-white">
+              AI Curated Parlay Historical Hit-Rate
+            </h3>
+            {isSmallSample && (
+              <span className="inline-flex items-center gap-1 text-[11px] font-mono font-medium px-2 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/40 text-amber-300">
+                <AlertTriangle className="w-3 h-3 text-amber-400" />
+                Preliminary Sample — Low Statistical Significance
+              </span>
+            )}
+          </div>
         </div>
         <div className="flex items-center gap-3 text-xs font-mono">
           <span className="flex items-center gap-1 text-emerald-400">
@@ -55,6 +65,15 @@ export const HitRateTracker: React.FC<HitRateTrackerProps> = ({ parlays }) => {
           </span>
         </div>
       </div>
+
+      {isSmallSample && (
+        <div className="mt-3 text-xs text-amber-300/90 bg-amber-950/30 border border-amber-800/40 rounded-lg px-3 py-2 flex items-start gap-2 font-mono">
+          <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0 mt-0.5" />
+          <span>
+            Notice: Current dataset contains {finished.length} settled slips (&lt;30 sample size). High ROI percentages are subject to small-sample variance.
+          </span>
+        </div>
+      )}
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-4">
         {/* Win Rate */}

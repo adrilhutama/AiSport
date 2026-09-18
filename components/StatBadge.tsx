@@ -5,17 +5,34 @@ interface FormBadgesProps {
 }
 
 export const FormBadges: React.FC<FormBadgesProps> = ({ form }) => {
-  const letters = form.slice(-5).split('');
+  if (!form || form.toUpperCase() === 'N/A' || form.trim() === '') {
+    return (
+      <span className="text-[10px] font-mono text-slate-400 bg-slate-800/80 px-1.5 py-0.5 rounded border border-slate-700">
+        N/A
+      </span>
+    );
+  }
+
+  const validChars = form.toUpperCase().replace(/[^WDL]/g, '');
+  if (!validChars) {
+    return (
+      <span className="text-[10px] font-mono text-slate-400 bg-slate-800/80 px-1.5 py-0.5 rounded border border-slate-700">
+        N/A
+      </span>
+    );
+  }
+
+  const letters = validChars.slice(-5).split('');
 
   return (
     <div className="flex items-center gap-1">
       {letters.map((res, idx) => {
         let bg = 'bg-slate-800 text-slate-400 border-slate-700';
-        if (res.toUpperCase() === 'W') {
+        if (res === 'W') {
           bg = 'bg-emerald-950/80 text-emerald-400 border-emerald-700/60';
-        } else if (res.toUpperCase() === 'D') {
+        } else if (res === 'D') {
           bg = 'bg-amber-950/80 text-amber-400 border-amber-700/60';
-        } else if (res.toUpperCase() === 'L') {
+        } else if (res === 'L') {
           bg = 'bg-rose-950/80 text-rose-400 border-rose-700/60';
         }
         return (
@@ -23,7 +40,7 @@ export const FormBadges: React.FC<FormBadgesProps> = ({ form }) => {
             key={idx}
             className={`w-4 h-4 rounded text-[10px] font-mono font-bold flex items-center justify-center border ${bg}`}
           >
-            {res.toUpperCase()}
+            {res}
           </span>
         );
       })}
