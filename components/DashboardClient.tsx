@@ -9,6 +9,7 @@ import { MatchCard } from '@/components/MatchCard';
 import { AIParlayCard } from '@/components/AIParlayCard';
 import { HitRateTracker } from '@/components/HitRateTracker';
 import { BettingSlip } from '@/components/BettingSlip';
+import { LiveScoreTicker } from '@/components/LiveScoreTicker';
 import { Sparkles, Layers, TrendingUp, Cpu, Info, Database, Calendar } from 'lucide-react';
 
 interface DashboardClientProps {
@@ -240,7 +241,10 @@ export const DashboardClient: React.FC<DashboardClientProps> = ({
       </div>
 
       {/* Main Content Area */}
-      <main className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-6 space-y-8">
+      <main className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+        {/* Real-time Live Score Ticker */}
+        <LiveScoreTicker initialNextKickoff={fixtures[0]?.match_time} />
+
         {/* VIEW A: AI Curated Parlays */}
         {activeTab === 'ai-parlays' && (
           <div className="space-y-6 animate-in fade-in duration-200">

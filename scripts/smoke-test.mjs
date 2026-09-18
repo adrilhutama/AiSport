@@ -141,6 +141,19 @@ async function runSmokeTests() {
     }
     console.log(`   ✅ Curated slips verified: Safe Combo #48, Value Seeker #29, and Weekend Lotto Moonshot #14 contain strictly upcoming legs with official crests and form.`);
 
+    // 5. Test Live Score API Route
+    console.log('\n5. Testing Real-time Live Score API (/api/livescore)...');
+    const liveRes = await fetch(`${BASE_URL}/api/livescore`);
+    if (!liveRes.ok) {
+      throw new Error(`Live Score API returned HTTP status ${liveRes.status}`);
+    }
+    const liveData = await liveRes.json();
+    if (!liveData.success || !Array.isArray(liveData.matches)) {
+      throw new Error('Live Score API response structure is invalid');
+    }
+    const cacheControl = liveRes.headers.get('cache-control');
+    console.log(`   ✅ Live Score API returned success (${liveData.matches.length} active live matches, next kickoff: ${liveData.nextKickoff || 'N/A'}, cache: ${cacheControl}).`);
+
     console.log('\n🎉 All smoke tests passed successfully!');
   } catch (err) {
     console.error(`\n❌ Smoke test failure:`, err.message);
