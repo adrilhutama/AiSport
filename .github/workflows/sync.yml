@@ -1,0 +1,15 @@
+name: Trigger OddsMatrix Sync
+
+on:
+  schedule:
+    - cron: "0 * * * *" # Runs every hour for free via GitHub Actions
+  workflow_dispatch:   # Enables manual trigger from GitHub UI
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Background Sync API
+        run: |
+          curl -f -X GET "https://${{ secrets.VERCEL_APP_URL }}/api/sync" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"

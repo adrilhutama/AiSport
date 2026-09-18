@@ -103,18 +103,30 @@ The background sync endpoint is located at `/api/sync`:
 - Uses [`lib/team-matcher.ts`](./lib/team-matcher.ts) to link disparate team names across Football-Data.org and The Odds API (e.g. "Paris Saint-Germain FC" vs "PSG", "Wolverhampton Wanderers" vs "Wolves").
 - Free-tier conservation: Responses are cached (30–60 minutes) to avoid exhausting free API allowances.
 
-### Vercel Cron Integration (`vercel.json`)
-To trigger automated hourly updates on Vercel:
+### Background Sync Scheduling Options
+
+#### Option A: Native Vercel Cron (Default - 100% Free on Hobby Plan)
+Vercel's Hobby plan restricts native cron jobs to a maximum frequency of once per day. The repository is preconfigured in `vercel.json` to run automatically every day at 05:00 UTC without extra setup:
+
 ```json
 {
   "crons": [
     {
       "path": "/api/sync",
-      "schedule": "0 * * * *"
+      "schedule": "0 5 * * *"
     }
   ]
 }
 ```
+
+#### Option B: GitHub Actions Hourly Sync (Free Alternative)
+To retain **hourly syncs** without needing a paid Vercel Pro subscription, use the included GitHub Actions workflow at [`.github/workflows/sync.yml`](./.github/workflows/sync.yml).
+
+1. Go to your GitHub repository -> **Settings** -> **Secrets and variables** -> **Actions**.
+2. Click **New repository secret** and add:
+   - `VERCEL_APP_URL`: Your deployed Vercel domain (e.g., `aisport.vercel.app`, without `https://`).
+   - `CRON_SECRET`: The same secret token configured in your Vercel Environment Variables.
+3. GitHub Actions will trigger `/api/sync` every hour (`0 * * * *`) completely free, and you can also manually trigger it anytime via the **Actions** tab in GitHub.
 
 ---
 
