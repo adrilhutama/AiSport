@@ -21,8 +21,8 @@ CREATE TABLE IF NOT EXISTS public.teams (
 CREATE TABLE IF NOT EXISTS public.fixtures (
     id TEXT PRIMARY KEY,                       -- Fixture identifier, e.g. 'pl-arsenal-chelsea-2026-09-20'
     league TEXT NOT NULL,                      -- 'PL', 'PD', 'SA', 'BL1', 'FL1'
-    home_team_id TEXT NOT NULL REFERENCES public.teams(id) ON DELETE CASCADE,
-    away_team_id TEXT NOT NULL REFERENCES public.teams(id) ON DELETE CASCADE,
+    home_team_id TEXT REFERENCES public.teams(id) ON DELETE SET NULL,
+    away_team_id TEXT REFERENCES public.teams(id) ON DELETE SET NULL,
     match_time TIMESTAMPTZ NOT NULL,           -- Scheduled kickoff time in UTC
     status TEXT DEFAULT 'SCHEDULED',           -- 'SCHEDULED', 'TIMED', 'IN_PLAY', 'FINISHED'
     created_at TIMESTAMPTZ DEFAULT NOW(),

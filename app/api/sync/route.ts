@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { revalidatePath } from 'next/cache';
 import { createServerClient } from '@/lib/supabase/server';
-import { findNormalizedTeamId } from '@/lib/team-matcher';
+import { findNormalizedTeamId, cleanTeamString } from '@/lib/team-matcher';
 import { LEAGUES_DATA, MOCK_FIXTURES, MOCK_TEAMS } from '@/lib/mock-data';
 import { LeagueCode } from '@/types';
 
@@ -42,61 +42,95 @@ async function handleSync(request: NextRequest) {
     leaguesProcessed: [] as string[],
     fixturesUpdated: 0,
     teamsUpdated: 0,
+    oddsUpdated: 0,
     errors: [] as string[],
   };
 
-  // If external API keys are missing, gracefully utilize mock data and sync to Supabase if configured
+  // --- MODE A: FALLBACK / MOCK ENGINE ---
   if (!footballDataKey || !oddsApiKey) {
     syncResults.mode = 'mock_fallback';
     syncResults.leaguesProcessed = ['PL', 'PD', 'SA', 'BL1', 'FL1'];
-    syncResults.fixturesUpdated = MOCK_FIXTURES.length;
-    syncResults.teamsUpdated = Object.keys(MOCK_TEAMS).length;
 
     if (supabase) {
-      try {
-        // Upsert mock teams
-        const teamsToInsert = Object.values(MOCK_TEAMS).map(t => ({
-          id: t.id,
-          league: t.league,
-          name: t.name,
-          aliases: t.aliases,
-          attack_rating: t.attack_rating,
-          defense_rating: t.defense_rating,
-          form: t.form,
-        }));
+      // 1. Step 1: Upsert Teams First
+      const teamsToInsert = Object.values(MOCK_TEAMS).map(t => ({
+        id: t.id,
+        league: t.league,
+        name: t.name,
+        aliases: t.aliases || [],
+        attack_rating: t.attack_rating,
+        defense_rating: t.defense_rating,
+        form: t.form,
+      }));
 
-        await supabase.from('teams').upsert(teamsToInsert, { onConflict: 'id' });
+      const { error: teamsErr } = await supabase
+        .from('teams')
+        .upsert(teamsToInsert, { onConflict: 'id' });
 
-        // Upsert mock fixtures
-        const fixturesToInsert = MOCK_FIXTURES.map(f => ({
-          id: f.id,
-          league: f.league,
-          home_team_id: f.home_team_id,
-          away_team_id: f.away_team_id,
-          match_time: f.match_time,
-          status: f.status,
-        }));
-
-        await supabase.from('fixtures').upsert(fixturesToInsert, { onConflict: 'id' });
-
-        // Upsert mock odds
-        const oddsToInsert = MOCK_FIXTURES.map(f => ({
-          fixture_id: f.id,
-          bookmaker: f.marketOdds?.bookmaker || 'Pinnacle Consensus',
-          home_odds: f.marketOdds?.home_odds || 2.0,
-          draw_odds: f.marketOdds?.draw_odds || 3.2,
-          away_odds: f.marketOdds?.away_odds || 3.5,
-          over_25_odds: f.marketOdds?.over_25_odds || 1.85,
-          under_25_odds: f.marketOdds?.under_25_odds || 1.95,
-        }));
-
-        await supabase.from('market_odds').upsert(oddsToInsert, { onConflict: 'fixture_id' });
-      } catch (err: any) {
-        syncResults.errors.push(`Supabase upsert note: ${err.message}`);
+      if (teamsErr) {
+        console.error('[Sync] Error upserting teams (mock mode):', teamsErr);
+        syncResults.errors.push(`Teams error: ${teamsErr.message} (code: ${teamsErr.code})`);
+        return NextResponse.json(
+          { success: false, error: 'Database foreign key failure on teams', details: syncResults },
+          { status: 500 }
+        );
       }
+      syncResults.teamsUpdated = teamsToInsert.length;
+
+      // 2. Step 2: Upsert Fixtures (after teams exist)
+      const fixturesToInsert = MOCK_FIXTURES.map(f => ({
+        id: f.id,
+        league: f.league,
+        home_team_id: f.home_team_id,
+        away_team_id: f.away_team_id,
+        match_time: f.match_time,
+        status: f.status || 'SCHEDULED',
+      }));
+
+      const { error: fixturesErr } = await supabase
+        .from('fixtures')
+        .upsert(fixturesToInsert, { onConflict: 'id' });
+
+      if (fixturesErr) {
+        console.error('[Sync] Error upserting fixtures (mock mode):', fixturesErr);
+        syncResults.errors.push(`Fixtures error: ${fixturesErr.message} (code: ${fixturesErr.code})`);
+        return NextResponse.json(
+          { success: false, error: 'Database failure on fixtures', details: syncResults },
+          { status: 500 }
+        );
+      }
+      syncResults.fixturesUpdated = fixturesToInsert.length;
+
+      // 3. Step 3: Upsert Market Odds (after fixtures exist)
+      const oddsToInsert = MOCK_FIXTURES.map(f => ({
+        fixture_id: f.id,
+        bookmaker: f.marketOdds?.bookmaker || 'Pinnacle Consensus',
+        home_odds: f.marketOdds?.home_odds || 2.0,
+        draw_odds: f.marketOdds?.draw_odds || 3.2,
+        away_odds: f.marketOdds?.away_odds || 3.5,
+        over_25_odds: f.marketOdds?.over_25_odds || 1.85,
+        under_25_odds: f.marketOdds?.under_25_odds || 1.95,
+      }));
+
+      const { error: oddsErr } = await supabase
+        .from('market_odds')
+        .upsert(oddsToInsert, { onConflict: 'fixture_id' });
+
+      if (oddsErr) {
+        console.error('[Sync] Error upserting market odds (mock mode):', oddsErr);
+        syncResults.errors.push(`Market odds error: ${oddsErr.message} (code: ${oddsErr.code})`);
+        return NextResponse.json(
+          { success: false, error: 'Database failure on market_odds', details: syncResults },
+          { status: 500 }
+        );
+      }
+      syncResults.oddsUpdated = oddsToInsert.length;
+    } else {
+      syncResults.fixturesUpdated = MOCK_FIXTURES.length;
+      syncResults.teamsUpdated = Object.keys(MOCK_TEAMS).length;
     }
 
-    // Trigger on-demand cache revalidation for Vercel CDN and Next.js App Router
+    // Invalidate Vercel / Next.js cache
     try {
       revalidatePath('/', 'layout');
       revalidatePath('/');
@@ -111,9 +145,52 @@ async function handleSync(request: NextRequest) {
     });
   }
 
-  // Live Multi-API Ingestion with strict free tier rate preservation
+  // --- MODE B: LIVE MULTI-API INGESTION ---
   syncResults.mode = 'live_multi_api';
   const leagueCodes: LeagueCode[] = ['PL', 'PD', 'SA', 'BL1', 'FL1'];
+
+  // Collector maps to accumulate relational data in memory
+  const allTeamsMap = new Map<string, {
+    id: string;
+    league: string;
+    name: string;
+    aliases: string[];
+    attack_rating: number;
+    defense_rating: number;
+    form: string;
+  }>();
+
+  // Pre-fill with baseline known teams so all standard slugs exist
+  for (const [id, team] of Object.entries(MOCK_TEAMS)) {
+    allTeamsMap.set(id, {
+      id: team.id,
+      league: team.league,
+      name: team.name,
+      aliases: team.aliases || [],
+      attack_rating: team.attack_rating,
+      defense_rating: team.defense_rating,
+      form: team.form,
+    });
+  }
+
+  const allFixturesMap = new Map<string, {
+    id: string;
+    league: string;
+    home_team_id: string;
+    away_team_id: string;
+    match_time: string;
+    status: string;
+  }>();
+
+  const allOddsMap = new Map<string, {
+    fixture_id: string;
+    bookmaker: string;
+    home_odds: number;
+    draw_odds: number;
+    away_odds: number;
+    over_25_odds: number;
+    under_25_odds: number;
+  }>();
 
   for (const code of leagueCodes) {
     const leagueInfo = LEAGUES_DATA[code];
@@ -123,34 +200,36 @@ async function handleSync(request: NextRequest) {
         `https://api.football-data.org/v4/competitions/${code}/standings`,
         {
           headers: { 'X-Auth-Token': footballDataKey },
-          next: { revalidate: 3600 }, // Cache 1 hour to respect free tier
+          next: { revalidate: 3600 },
         }
       );
 
-      const teamFormMap: Record<string, { form: string; attackRating: number; defenseRating: number }> = {};
       if (fdRes.ok) {
         const fdData = await fdRes.json();
         const table = fdData.standings?.[0]?.table || [];
         for (const row of table) {
           const rawTeamName = row.team?.name || '';
-          const normId = findNormalizedTeamId(rawTeamName);
+          const normId = findNormalizedTeamId(rawTeamName) || cleanTeamString(rawTeamName).replace(/\s+/g, '-');
           if (normId) {
             const played = Math.max(1, row.playedGames || 1);
             const goalsFor = row.goalsFor || 0;
             const goalsAgainst = row.goalsAgainst || 0;
             const avgScored = goalsFor / played;
             const avgConceded = goalsAgainst / played;
-            
-            // Baseline normalization against league averages
+
             const leagueAvg = (leagueInfo.avgHomeGoals + leagueInfo.avgAwayGoals) / 2;
             const attackRating = Number(Math.max(0.6, Math.min(2.0, avgScored / leagueAvg)).toFixed(2));
             const defenseRating = Number(Math.max(0.5, Math.min(1.8, avgConceded / leagueAvg)).toFixed(2));
-            
-            teamFormMap[normId] = {
+
+            allTeamsMap.set(normId, {
+              id: normId,
+              league: code,
+              name: row.team?.name || normId,
+              aliases: [rawTeamName],
+              attack_rating: attackRating,
+              defense_rating: defenseRating,
               form: row.form?.replace(/,/g, '') || 'DDDDD',
-              attackRating,
-              defenseRating,
-            };
+            });
           }
         }
       }
@@ -159,17 +238,42 @@ async function handleSync(request: NextRequest) {
       const oddsRes = await fetch(
         `https://api.the-odds-api.com/v4/sports/${leagueInfo.oddsApiKey}/odds/?apiKey=${oddsApiKey}&regions=eu,uk&markets=h2h,totals&oddsFormat=decimal`,
         {
-          next: { revalidate: 1800 }, // Cache 30 mins
+          next: { revalidate: 1800 },
         }
       );
 
       if (oddsRes.ok) {
         const oddsData = await oddsRes.json();
         for (const game of oddsData) {
-          const homeNormId = findNormalizedTeamId(game.home_team);
-          const awayNormId = findNormalizedTeamId(game.away_team);
+          const homeNormId = findNormalizedTeamId(game.home_team) || cleanTeamString(game.home_team).replace(/\s+/g, '-');
+          const awayNormId = findNormalizedTeamId(game.away_team) || cleanTeamString(game.away_team).replace(/\s+/g, '-');
 
           if (homeNormId && awayNormId) {
+            // Guarantee both teams are registered in allTeamsMap before referencing
+            if (!allTeamsMap.has(homeNormId)) {
+              allTeamsMap.set(homeNormId, {
+                id: homeNormId,
+                league: code,
+                name: game.home_team,
+                aliases: [game.home_team],
+                attack_rating: 1.0,
+                defense_rating: 1.0,
+                form: 'DDDDD',
+              });
+            }
+
+            if (!allTeamsMap.has(awayNormId)) {
+              allTeamsMap.set(awayNormId, {
+                id: awayNormId,
+                league: code,
+                name: game.away_team,
+                aliases: [game.away_team],
+                attack_rating: 1.0,
+                defense_rating: 1.0,
+                form: 'DDDDD',
+              });
+            }
+
             const fixtureId = `${code.toLowerCase()}-${homeNormId}-${awayNormId}`;
             const bookmaker = game.bookmakers?.[0];
             const h2hMarket = bookmaker?.markets?.find((m: any) => m.key === 'h2h');
@@ -182,36 +286,97 @@ async function handleSync(request: NextRequest) {
             const over25Odds = totalsMarket?.outcomes?.find((o: any) => o.name === 'Over' && o.point === 2.5)?.price || 1.85;
             const under25Odds = totalsMarket?.outcomes?.find((o: any) => o.name === 'Under' && o.point === 2.5)?.price || 1.95;
 
-            if (supabase) {
-              await supabase.from('fixtures').upsert({
-                id: fixtureId,
-                league: code,
-                home_team_id: homeNormId,
-                away_team_id: awayNormId,
-                match_time: game.commence_time,
-                status: 'SCHEDULED',
-              });
+            allFixturesMap.set(fixtureId, {
+              id: fixtureId,
+              league: code,
+              home_team_id: homeNormId,
+              away_team_id: awayNormId,
+              match_time: game.commence_time,
+              status: 'SCHEDULED',
+            });
 
-              await supabase.from('market_odds').upsert({
-                fixture_id: fixtureId,
-                bookmaker: bookmaker?.title || 'Consensus',
-                home_odds: homeOdds,
-                draw_odds: drawOdds,
-                away_odds: awayOdds,
-                over_25_odds: over25Odds,
-                under_25_odds: under25Odds,
-              });
-            }
-
-            syncResults.fixturesUpdated++;
+            allOddsMap.set(fixtureId, {
+              fixture_id: fixtureId,
+              bookmaker: bookmaker?.title || 'Consensus',
+              home_odds: homeOdds,
+              draw_odds: drawOdds,
+              away_odds: awayOdds,
+              over_25_odds: over25Odds,
+              under_25_odds: under25Odds,
+            });
           }
         }
       }
 
       syncResults.leaguesProcessed.push(code);
     } catch (err: any) {
+      console.error(`[Sync] Error processing league ${code}:`, err);
       syncResults.errors.push(`Error processing ${code}: ${err.message}`);
     }
+  }
+
+  // --- STRICT RELATIONAL PERSISTENCE IN SUPABASE ---
+  if (supabase) {
+    try {
+      // Step 1: Upsert ALL Teams First (Guarantees foreign keys exist)
+      const teamsPayload = Array.from(allTeamsMap.values());
+      const { error: teamsError } = await supabase
+        .from('teams')
+        .upsert(teamsPayload, { onConflict: 'id' });
+
+      if (teamsError) {
+        console.error('[Sync] Fatal: Teams upsert error in Supabase:', teamsError);
+        syncResults.errors.push(`Teams error: ${teamsError.message} (code: ${teamsError.code})`);
+        return NextResponse.json(
+          { success: false, error: 'Database foreign key failure on teams', details: syncResults },
+          { status: 500 }
+        );
+      }
+      syncResults.teamsUpdated = teamsPayload.length;
+
+      // Step 2: Upsert Fixtures (After all team IDs exist)
+      const fixturesPayload = Array.from(allFixturesMap.values());
+      const { error: fixturesError } = await supabase
+        .from('fixtures')
+        .upsert(fixturesPayload, { onConflict: 'id' });
+
+      if (fixturesError) {
+        console.error('[Sync] Fatal: Fixtures upsert error in Supabase:', fixturesError);
+        syncResults.errors.push(`Fixtures error: ${fixturesError.message} (code: ${fixturesError.code})`);
+        return NextResponse.json(
+          { success: false, error: 'Database upsert failure on fixtures', details: syncResults },
+          { status: 500 }
+        );
+      }
+      syncResults.fixturesUpdated = fixturesPayload.length;
+
+      // Step 3: Upsert Market Odds (After all fixture IDs exist)
+      const oddsPayload = Array.from(allOddsMap.values());
+      const { error: oddsError } = await supabase
+        .from('market_odds')
+        .upsert(oddsPayload, { onConflict: 'fixture_id' });
+
+      if (oddsError) {
+        console.error('[Sync] Fatal: Market odds upsert error in Supabase:', oddsError);
+        syncResults.errors.push(`Market odds error: ${oddsError.message} (code: ${oddsError.code})`);
+        return NextResponse.json(
+          { success: false, error: 'Database upsert failure on market_odds', details: syncResults },
+          { status: 500 }
+        );
+      }
+      syncResults.oddsUpdated = oddsPayload.length;
+    } catch (dbErr: any) {
+      console.error('[Sync] Unexpected database exception:', dbErr);
+      syncResults.errors.push(`Database exception: ${dbErr.message}`);
+      return NextResponse.json(
+        { success: false, error: 'Unexpected database exception', details: syncResults },
+        { status: 500 }
+      );
+    }
+  } else {
+    syncResults.teamsUpdated = allTeamsMap.size;
+    syncResults.fixturesUpdated = allFixturesMap.size;
+    syncResults.oddsUpdated = allOddsMap.size;
   }
 
   // Trigger on-demand cache revalidation for Vercel CDN and Next.js App Router
@@ -224,7 +389,7 @@ async function handleSync(request: NextRequest) {
 
   return NextResponse.json({
     success: true,
-    message: 'Live multi-API sync completed successfully',
+    message: 'Live multi-API sync completed successfully with strict relational order',
     summary: syncResults,
   });
 }
