@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { Activity, RefreshCw, Layers, Sparkles } from 'lucide-react';
 
 interface HeaderProps {
@@ -18,6 +19,16 @@ export const Header: React.FC<HeaderProps> = ({
   onSync,
   isSyncing,
 }) => {
+  const router = useRouter();
+
+  const handleSyncClick = async () => {
+    await onSync();
+    try {
+      router.refresh();
+    } catch (e) {
+      // ignore
+    }
+  };
   return (
     <header className="sticky top-0 z-30 w-full border-b border-slate-800/80 bg-terminal-950/90 backdrop-blur-md">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -78,7 +89,7 @@ export const Header: React.FC<HeaderProps> = ({
                 Synced: {lastSyncTime}
               </span>
               <button
-                onClick={onSync}
+                onClick={handleSyncClick}
                 disabled={isSyncing}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-mono text-xs font-medium text-slate-300 bg-slate-800 hover:bg-slate-750 border border-slate-700 active:scale-95 transition-all disabled:opacity-60"
                 title="Sync latest match data and market lines"

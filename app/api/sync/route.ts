@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { revalidatePath } from 'next/cache';
 import { createServerClient } from '@/lib/supabase/server';
 import { findNormalizedTeamId } from '@/lib/team-matcher';
 import { LEAGUES_DATA, MOCK_FIXTURES, MOCK_TEAMS } from '@/lib/mock-data';
@@ -93,6 +94,14 @@ async function handleSync(request: NextRequest) {
       } catch (err: any) {
         syncResults.errors.push(`Supabase upsert note: ${err.message}`);
       }
+    }
+
+    // Trigger on-demand cache revalidation for Vercel CDN and Next.js App Router
+    try {
+      revalidatePath('/', 'layout');
+      revalidatePath('/');
+    } catch (revalErr) {
+      console.warn('revalidatePath warning:', revalErr);
     }
 
     return NextResponse.json({
@@ -203,6 +212,14 @@ async function handleSync(request: NextRequest) {
     } catch (err: any) {
       syncResults.errors.push(`Error processing ${code}: ${err.message}`);
     }
+  }
+
+  // Trigger on-demand cache revalidation for Vercel CDN and Next.js App Router
+  try {
+    revalidatePath('/', 'layout');
+    revalidatePath('/');
+  } catch (revalErr) {
+    console.warn('revalidatePath warning:', revalErr);
   }
 
   return NextResponse.json({
