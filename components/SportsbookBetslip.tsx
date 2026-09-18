@@ -6,6 +6,7 @@ import { calculateParlayMetrics, calculateKellyCriterion } from '@/lib/analytics
 import { AIParlayCard } from '@/components/AIParlayCard';
 import { EVBadge } from '@/components/StatBadge';
 import { TeamCrest } from '@/components/TeamCrest';
+import { formatIDR } from '@/lib/formatters';
 import {
   Receipt,
   Sparkles,
@@ -35,7 +36,7 @@ export const SportsbookBetslip: React.FC<SportsbookBetslipProps> = ({
   onTailSlip,
 }) => {
   const [activeTab, setActiveTab] = useState<'betslip' | 'ai-parlays'>('betslip');
-  const [bankroll, setBankroll] = useState<number>(100);
+  const [bankroll, setBankroll] = useState<number>(1000000);
   const [customStake, setCustomStake] = useState<string>('');
   const [copied, setCopied] = useState(false);
 
@@ -69,7 +70,7 @@ export const SportsbookBetslip: React.FC<SportsbookBetslipProps> = ({
     const summary = [
       `🎯 OddsMatrix Slip Taruhan (${legs.length} Legs)`,
       `Total Odds: ${parlayMetrics.totalOdds.toFixed(2)} | True Win%: ${(parlayMetrics.combinedTrueProb * 100).toFixed(1)}% | EV: +${parlayMetrics.expectedValue}%`,
-      `Recommended 1/4 Kelly Stake: $${kelly.recommendedStakeAmount} (${kelly.recommendedStakePercent}%)`,
+      `Recommended 1/4 Kelly Stake: ${formatIDR(kelly.recommendedStakeAmount)} (${kelly.recommendedStakePercent}%)`,
       '------------------------------',
       ...legs.map(
         (l, i) => `${i + 1}. ${l.homeTeam} vs ${l.awayTeam} -> ${l.market}: ${l.selection} @ ${l.odds.toFixed(2)} (${l.ev > 0 ? `+${l.ev}% EV` : ''})`
@@ -278,12 +279,12 @@ export const SportsbookBetslip: React.FC<SportsbookBetslipProps> = ({
                   <div className="flex items-center gap-2">
                     <div className="flex-1">
                       <label className="text-[10px] font-mono text-slate-500 block mb-0.5">
-                        Total Bankroll ($)
+                        Total Bankroll (Rp)
                       </label>
                       <input
                         type="number"
-                        min="1"
-                        step="1"
+                        min="1000"
+                        step="10000"
                         value={bankroll}
                         onChange={(e) => setBankroll(Math.max(1, parseFloat(e.target.value) || 0))}
                         className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs font-mono text-white focus:outline-none focus:border-emerald-500"
@@ -291,11 +292,11 @@ export const SportsbookBetslip: React.FC<SportsbookBetslipProps> = ({
                     </div>
                     <div className="flex-1">
                       <label className="text-[10px] font-mono text-slate-500 block mb-0.5">
-                        Suggested Stake ($)
+                        Suggested Stake (Rp)
                       </label>
                       <input
                         type="number"
-                        placeholder={`$${kelly.recommendedStakeAmount}`}
+                        placeholder={formatIDR(kelly.recommendedStakeAmount)}
                         value={customStake}
                         onChange={(e) => setCustomStake(e.target.value)}
                         className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs font-mono text-emerald-400 focus:outline-none focus:border-emerald-500"
@@ -305,7 +306,7 @@ export const SportsbookBetslip: React.FC<SportsbookBetslipProps> = ({
 
                   <div className="flex items-center justify-between pt-1 text-[11px] font-mono text-slate-400">
                     <span>Est. Payout:</span>
-                    <strong className="text-white">${potentialPayout}</strong>
+                    <strong className="text-emerald-400 font-bold">{formatIDR(potentialPayout)}</strong>
                   </div>
                 </div>
 

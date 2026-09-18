@@ -185,48 +185,46 @@ export const DashboardClient: React.FC<DashboardClientProps> = ({
         dataSource={dataSource}
       />
 
-      {/* Hero / Terminal Intro Banner */}
-      <div className="border-b border-slate-800/80 bg-slate-900/40 py-4 sm:py-5 px-3 sm:px-6 lg:px-8">
-        <div className="max-w-[1700px] mx-auto flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-2 text-xs font-mono text-emerald-400 uppercase tracking-wider mb-1">
-              <Cpu className="w-3.5 h-3.5" />
-              Automated Quantitative Parlay Architecture
-            </div>
-            <h1 className="text-xl sm:text-2xl lg:text-3xl font-extrabold text-white tracking-tight">
-              Top 5 European Leagues Analytics Matrix
+      {/* Hero / Terminal Intro Banner (Ultra-Compact Single Row) */}
+      <div className="border-b border-slate-800/80 bg-slate-900/40 py-2 px-3 sm:px-6 lg:px-8">
+        <div className="max-w-[1700px] mx-auto flex flex-col md:flex-row md:items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5">
+            <h1 className="text-base sm:text-lg font-extrabold text-white tracking-tight flex items-center gap-2">
+              <Cpu className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+              <span>Top 5 European Leagues Analytics Matrix</span>
             </h1>
-            <p className="text-xs sm:text-sm text-slate-400 mt-1 max-w-2xl leading-relaxed">
-              Real-time Bivariate Poisson goal modeling, de-vigged market comparison, +EV leg identification, and Fractional Kelly Criterion bankroll protection.
+            <span className="hidden lg:inline text-slate-600 text-xs">•</span>
+            <p className="hidden lg:inline text-xs text-slate-400 truncate max-w-xl">
+              Bivariate Poisson models, +EV identification & Fractional Kelly Criterion bankroll protection.
             </p>
           </div>
 
           {/* Quick Metrics Pills */}
-          <div className="flex flex-wrap gap-2 text-xs font-mono">
-            <div className="bg-slate-900/80 border border-slate-800 px-3 py-1.5 rounded-xl flex items-center gap-2">
-              <Database className="w-3.5 h-3.5 text-cyan-400" />
-              <span className="text-slate-400">Source:</span>
-              <strong className="text-cyan-300 uppercase">
+          <div className="flex items-center gap-2 text-xs font-mono shrink-0 overflow-x-auto no-scrollbar">
+            <div className="bg-slate-900/80 border border-slate-800 px-2.5 py-1 rounded-lg flex items-center gap-1.5">
+              <Database className="w-3 h-3 text-cyan-400" />
+              <span className="text-slate-400 text-[11px]">Source:</span>
+              <strong className="text-cyan-300 uppercase text-[11px]">
                 {dataSource === 'supabase' ? 'Supabase Live' : 'Live Engine'}
               </strong>
             </div>
-            <div className="bg-slate-900/80 border border-slate-800 px-3 py-1.5 rounded-xl flex items-center gap-2">
+            <div className="bg-slate-900/80 border border-slate-800 px-2.5 py-1 rounded-lg flex items-center gap-1.5">
               <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-              <span className="text-slate-400">Fixtures:</span>
-              <strong className="text-white">{fixtures.length}</strong>
+              <span className="text-slate-400 text-[11px]">Fixtures:</span>
+              <strong className="text-white text-[11px]">{fixtures.length}</strong>
             </div>
-            <div className="bg-slate-900/80 border border-slate-800 px-3 py-1.5 rounded-xl flex items-center gap-2">
-              <TrendingUp className="w-3.5 h-3.5 text-emerald-400" />
-              <span className="text-slate-400">+EV Bets Detected:</span>
-              <strong className="text-emerald-400">{totalValueBets}</strong>
+            <div className="bg-slate-900/80 border border-slate-800 px-2.5 py-1 rounded-lg flex items-center gap-1.5">
+              <TrendingUp className="w-3 h-3 text-emerald-400" />
+              <span className="text-slate-400 text-[11px]">+EV Bets:</span>
+              <strong className="text-emerald-400 text-[11px]">{totalValueBets}</strong>
             </div>
           </div>
         </div>
       </div>
 
       {/* 3-COLUMN MAIN SPORTSBOOK TERMINAL GRID */}
-      <main className="flex-1 max-w-[1700px] mx-auto w-full px-2 sm:px-4 lg:px-6 py-4">
-        <div className="flex flex-col lg:flex-row items-start gap-4">
+      <main className="flex-1 max-w-[1700px] mx-auto w-full px-2 sm:px-4 lg:px-6 py-2.5">
+        <div className="flex flex-col lg:flex-row items-start gap-3">
           {/* COLUMN 1: LEFT SIDEBAR (220px - 260px) */}
           <SportsbookSidebar
             selectedLeague={selectedLeague}

@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { EVBadge } from '@/components/StatBadge';
 import { TeamCrest } from '@/components/TeamCrest';
+import { formatIDR } from '@/lib/formatters';
 
 interface BettingSlipProps {
   legs: LegSelection[];
@@ -30,7 +31,7 @@ export const BettingSlip: React.FC<BettingSlipProps> = ({
   onClearSlip,
 }) => {
   const [isExpanded, setIsExpanded] = useState(true);
-  const [bankroll, setBankroll] = useState<number>(100);
+  const [bankroll, setBankroll] = useState<number>(1000000);
   const [customStake, setCustomStake] = useState<string>('');
   const [copied, setCopied] = useState(false);
 
@@ -50,7 +51,7 @@ export const BettingSlip: React.FC<BettingSlipProps> = ({
     const summary = [
       `🎯 OddsMatrix Parlay Slip (${legs.length} Legs)`,
       `Total Odds: ${parlayMetrics.totalOdds.toFixed(2)} | True Win%: ${(parlayMetrics.combinedTrueProb * 100).toFixed(1)}% | EV: +${parlayMetrics.expectedValue}%`,
-      `Recommended 1/4 Kelly Stake: $${kelly.recommendedStakeAmount} (${kelly.recommendedStakePercent}%)`,
+      `Recommended 1/4 Kelly Stake: ${formatIDR(kelly.recommendedStakeAmount)} (${kelly.recommendedStakePercent}%)`,
       '------------------------------',
       ...legs.map(
         (l, i) => `${i + 1}. ${l.homeTeam} vs ${l.awayTeam} -> ${l.market}: ${l.selection} @ ${l.odds.toFixed(2)} (${l.ev > 0 ? `+${l.ev}% EV` : ''})`
@@ -203,10 +204,11 @@ export const BettingSlip: React.FC<BettingSlipProps> = ({
 
             <div className="grid grid-cols-2 gap-2 text-xs">
               <div>
-                <label className="text-[11px] text-slate-400 block mb-1">Total Bankroll ($)</label>
+                <label className="text-[11px] text-slate-400 block mb-1">Total Bankroll (Rp)</label>
                 <input
                   type="number"
-                  min="1"
+                  min="1000"
+                  step="10000"
                   value={bankroll}
                   onChange={(e) => setBankroll(Math.max(1, parseFloat(e.target.value) || 0))}
                   className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 font-mono text-white text-xs focus:outline-none focus:border-cyan-500"
@@ -216,7 +218,7 @@ export const BettingSlip: React.FC<BettingSlipProps> = ({
               <div>
                 <label className="text-[11px] text-slate-400 block mb-1">Kelly Rec. Stake</label>
                 <div className="bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1.5 font-mono text-emerald-400 text-xs font-bold flex items-center justify-between">
-                  <span>${kelly.recommendedStakeAmount.toFixed(2)}</span>
+                  <span>{formatIDR(kelly.recommendedStakeAmount)}</span>
                   <span className="text-[10px] text-slate-400 font-normal">
                     ({kelly.recommendedStakePercent}%)
                   </span>
@@ -227,20 +229,20 @@ export const BettingSlip: React.FC<BettingSlipProps> = ({
             {/* Custom Stake & Payout */}
             <div className="pt-2 border-t border-slate-700/60 flex items-center justify-between text-xs">
               <div>
-                <label className="text-[11px] text-slate-400 block mb-1">Wager Stake ($)</label>
+                <label className="text-[11px] text-slate-400 block mb-1">Wager Stake (Rp)</label>
                 <input
                   type="number"
-                  placeholder={kelly.recommendedStakeAmount.toFixed(2)}
+                  placeholder={formatIDR(kelly.recommendedStakeAmount)}
                   value={customStake}
                   onChange={(e) => setCustomStake(e.target.value)}
-                  className="w-24 bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 font-mono text-white text-xs focus:outline-none focus:border-cyan-500"
+                  className="w-28 bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 font-mono text-white text-xs focus:outline-none focus:border-cyan-500"
                 />
               </div>
 
               <div className="text-right">
                 <div className="text-[11px] text-slate-400">Potential Payout</div>
                 <div className="text-base font-mono font-bold text-emerald-400">
-                  ${potentialPayout.toFixed(2)}
+                  {formatIDR(potentialPayout)}
                 </div>
               </div>
             </div>

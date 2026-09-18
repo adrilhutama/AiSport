@@ -27,9 +27,9 @@ test.describe('OddsMatrix End-to-End Suite', () => {
 
     // 6. Test Bankroll Input interaction
     const bankrollInput = page.locator('input[type="number"]').first();
-    await bankrollInput.fill('250');
+    await bankrollInput.fill('250000');
     // Verify updated calculation
-    await expect(page.locator('text=Total Bankroll ($)')).toBeVisible();
+    await expect(page.locator('text=Total Bankroll')).toBeVisible();
 
     // 7. Test Copy Parlay Slip
     const copyButton = page.locator('button:has-text("Copy Parlay Slip")');

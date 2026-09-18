@@ -31,112 +31,57 @@ export const HitRateTracker: React.FC<HitRateTrackerProps> = ({ parlays }) => {
       : 0;
 
   return (
-    <div className="bg-terminal-900/80 backdrop-blur-md border border-slate-800/80 rounded-xl p-4 sm:p-5 shadow-lg">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-slate-800/80 gap-2">
-        <div>
-          <div className="flex items-center gap-2 text-xs font-mono text-cyan-400 uppercase tracking-wider">
-            <Award className="w-3.5 h-3.5" />
-            Quantitative Track Record
+    <div className="bg-slate-900/90 border border-slate-800/80 rounded-xl px-3 py-2 sm:px-4 sm:py-2.5 shadow-sm space-y-2">
+      {/* Compact Single-Row KPI Strip */}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        {/* Left: Title & Sample Significance Warning */}
+        <div className="flex flex-wrap items-center gap-2 min-w-0">
+          <div className="flex items-center gap-1.5 text-xs font-mono text-cyan-400 font-bold uppercase tracking-wider shrink-0">
+            <Award className="w-3.5 h-3.5 text-cyan-400" />
+            <span className="hidden sm:inline">Track Record:</span>
           </div>
-          <div className="flex flex-wrap items-center gap-2.5 mt-0.5">
-            <h3 className="text-base font-bold text-white">
-              AI Curated Parlay Historical Hit-Rate
-            </h3>
-            {isSmallSample && (
-              <span className="inline-flex items-center gap-1 text-[11px] font-mono font-medium px-2 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/40 text-amber-300">
-                <AlertTriangle className="w-3 h-3 text-amber-400" />
-                Preliminary Sample — Low Statistical Significance
-              </span>
-            )}
-          </div>
-        </div>
-        <div className="flex items-center gap-3 text-xs font-mono">
-          <span className="flex items-center gap-1 text-emerald-400">
-            <span className="w-2 h-2 rounded-full bg-emerald-400" />
-            {wonCount} Won
-          </span>
-          <span className="flex items-center gap-1 text-rose-400">
-            <span className="w-2 h-2 rounded-full bg-rose-400" />
-            {lostCount} Lost
-          </span>
-          <span className="flex items-center gap-1 text-slate-400">
-            <span className="w-2 h-2 rounded-full bg-slate-400" />
-            {pendingCount} Active
-          </span>
-        </div>
-      </div>
 
-      {isSmallSample && (
-        <div className="mt-3 text-xs text-amber-300/90 bg-amber-950/30 border border-amber-800/40 rounded-lg px-3 py-2 flex items-start gap-2 font-mono">
-          <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0 mt-0.5" />
-          <span>
-            Notice: Current dataset contains {finished.length} settled slips (&lt;30 sample size). High ROI percentages are subject to small-sample variance.
-          </span>
-        </div>
-      )}
+          <h3 className="text-xs sm:text-sm font-bold text-white truncate">
+            AI Curated Parlay Historical Hit-Rate
+          </h3>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-4">
-        {/* Win Rate */}
-        <div className="bg-slate-900/60 backdrop-blur-sm border border-slate-800/80 rounded-xl p-3.5 hover:border-slate-700/80 transition-all">
-          <div className="flex items-center justify-between text-xs text-slate-400">
-            <span>Hit Rate</span>
-            <CheckCircle className="w-3.5 h-3.5 text-emerald-400" />
-          </div>
-          <div className="text-xl font-mono font-bold text-emerald-400 mt-1">
-            {hitRate}%
-          </div>
-          <div className="text-[11px] text-slate-400 mt-0.5 font-mono">
-            {wonCount} of {finished.length} settled
-          </div>
+          {isSmallSample && (
+            <span className="inline-flex items-center gap-1 text-[10px] font-mono font-semibold px-2 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/40 text-amber-300 shrink-0">
+              <AlertTriangle className="w-3 h-3 text-amber-400" />
+              Preliminary Sample — Low Statistical Significance
+            </span>
+          )}
         </div>
 
-        {/* Total Net Profit */}
-        <div className="bg-slate-900/60 backdrop-blur-sm border border-slate-800/80 rounded-xl p-3.5 hover:border-slate-700/80 transition-all">
-          <div className="flex items-center justify-between text-xs text-slate-400">
-            <span>Net Profit (1u flat)</span>
-            <TrendingUp className="w-3.5 h-3.5 text-cyan-400" />
+        {/* Right: Inline KPI Badges */}
+        <div className="flex items-center gap-2 sm:gap-3 text-xs font-mono shrink-0 overflow-x-auto no-scrollbar">
+          {/* Hit Rate */}
+          <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-slate-950/80 border border-slate-800">
+            <span className="text-[10px] text-slate-500 uppercase">Hit:</span>
+            <strong className="text-emerald-400 font-bold">{hitRate}%</strong>
+            <span className="text-[10px] text-slate-500 hidden md:inline">({wonCount}/{finished.length})</span>
           </div>
-          <div
-            className={`text-xl font-mono font-bold mt-1 ${
-              netUnits >= 0 ? 'text-emerald-400' : 'text-rose-400'
-            }`}
-          >
-            {netUnits >= 0 ? `+${netUnits}u` : `${netUnits}u`}
-          </div>
-          <div className="text-[11px] text-slate-400 mt-0.5 font-mono">
-            P&L across closed slips
-          </div>
-        </div>
 
-        {/* ROI */}
-        <div className="bg-slate-900/60 backdrop-blur-sm border border-slate-800/80 rounded-xl p-3.5 hover:border-slate-700/80 transition-all">
-          <div className="flex items-center justify-between text-xs text-slate-400">
-            <span>Return on Investment</span>
-            <Percent className="w-3.5 h-3.5 text-amber-400" />
+          {/* Net Units */}
+          <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-slate-950/80 border border-slate-800">
+            <span className="text-[10px] text-slate-500 uppercase">P&L:</span>
+            <strong className={`font-bold ${netUnits >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+              {netUnits >= 0 ? `+${netUnits}u` : `${netUnits}u`}
+            </strong>
           </div>
-          <div
-            className={`text-xl font-mono font-bold mt-1 ${
-              roi >= 0 ? 'text-emerald-400' : 'text-rose-400'
-            }`}
-          >
-            {roi >= 0 ? `+${roi}%` : `${roi}%`}
-          </div>
-          <div className="text-[11px] text-slate-400 mt-0.5 font-mono">
-            ROI per unit staked
-          </div>
-        </div>
 
-        {/* Tracked Volume */}
-        <div className="bg-slate-900/60 backdrop-blur-sm border border-slate-800/80 rounded-xl p-3.5 hover:border-slate-700/80 transition-all">
-          <div className="flex items-center justify-between text-xs text-slate-400">
-            <span>Tracked Volume</span>
-            <span className="text-xs font-mono text-slate-400 font-bold">ALL</span>
+          {/* ROI */}
+          <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-slate-950/80 border border-slate-800">
+            <span className="text-[10px] text-slate-500 uppercase">ROI:</span>
+            <strong className={`font-bold ${roi >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+              {roi >= 0 ? `+${roi}%` : `${roi}%`}
+            </strong>
           </div>
-          <div className="text-xl font-mono font-bold text-white mt-1">
-            {parlays.length} Slips
-          </div>
-          <div className="text-[11px] text-slate-400 mt-0.5 font-mono">
-            Safe, Value & Lotto slips
+
+          {/* Tracked Volume */}
+          <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-slate-950/80 border border-slate-800">
+            <span className="text-[10px] text-slate-500 uppercase">Vol:</span>
+            <strong className="text-white font-bold">{parlays.length} Slips</strong>
           </div>
         </div>
       </div>
