@@ -5,12 +5,15 @@ import { useRouter } from 'next/navigation';
 import { LeagueCode, LegSelection, Fixture, AIParlay } from '@/types';
 import { Header } from '@/components/Header';
 import { LeagueFilter } from '@/components/LeagueFilter';
-import { MatchCard } from '@/components/MatchCard';
+import { SportsbookSidebar } from '@/components/SportsbookSidebar';
+import { SportsbookTable } from '@/components/SportsbookTable';
+import { SportsbookBetslip } from '@/components/SportsbookBetslip';
+import { ScoreMatrixModal } from '@/components/ScoreMatrixModal';
 import { AIParlayCard } from '@/components/AIParlayCard';
 import { HitRateTracker } from '@/components/HitRateTracker';
-import { BettingSlip } from '@/components/BettingSlip';
 import { LiveScoreTicker } from '@/components/LiveScoreTicker';
-import { Sparkles, Layers, TrendingUp, Cpu, Info, Database, Calendar } from 'lucide-react';
+import { analyzeFixtureQuant } from '@/lib/analytics';
+import { Sparkles, Layers, TrendingUp, Cpu, Database, Calendar } from 'lucide-react';
 
 interface DashboardClientProps {
   initialFixtures: Fixture[];
@@ -32,9 +35,9 @@ export const DashboardClient: React.FC<DashboardClientProps> = ({
   const [lastSyncTime, setLastSyncTime] = useState<string>('Live (Ready)');
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [syncToast, setSyncToast] = useState<string | null>(null);
-  const [showAllMatches, setShowAllMatches] = useState<boolean>(false);
+  const [matrixFixture, setMatrixFixture] = useState<Fixture | null>(null);
 
-  // Sync state with incoming server props when router.refresh() resolves
+  // Sync state with incoming server props
   useEffect(() => {
     if (initialFixtures && initialFixtures.length > 0) {
       setFixtures(initialFixtures);
@@ -51,25 +54,6 @@ export const DashboardClient: React.FC<DashboardClientProps> = ({
   const sortedFixtures = [...fixtures].sort(
     (a, b) => new Date(a.match_time).getTime() - new Date(b.match_time).getTime()
   );
-
-  // Filter fixtures according to selected league
-  const leagueFilteredFixtures =
-    selectedLeague === 'ALL'
-      ? sortedFixtures
-      : sortedFixtures.filter((f) => f.league === selectedLeague);
-
-  // Gameweek / Upcoming round grouping: limit to max 10 matches per league by default
-  const displayedFixtures = showAllMatches
-    ? leagueFilteredFixtures
-    : selectedLeague === 'ALL'
-    ? (() => {
-        const leagueCounts: Record<string, number> = {};
-        return leagueFilteredFixtures.filter((f) => {
-          leagueCounts[f.league] = (leagueCounts[f.league] || 0) + 1;
-          return leagueCounts[f.league] <= 10;
-        });
-      })()
-    : leagueFilteredFixtures.slice(0, 10);
 
   // Calculate counts for league badges
   const fixtureCounts: Record<LeagueCode | 'ALL', number> = {
@@ -136,10 +120,8 @@ export const DashboardClient: React.FC<DashboardClientProps> = ({
       );
       setSyncToast(data.message || 'Market lines synced successfully!');
 
-      // 1. Invalidate Next.js App Router client cache
       router.refresh();
 
-      // 2. Directly fetch latest Supabase data with no-store cache control
       const freshRes = await fetch('/api/fixtures', {
         cache: 'no-store',
         headers: { 'Cache-Control': 'no-cache' },
@@ -183,7 +165,7 @@ export const DashboardClient: React.FC<DashboardClientProps> = ({
   }, 0);
 
   return (
-    <div className="min-h-screen bg-terminal-950 text-slate-100 flex flex-col font-sans selection:bg-cyan-500/30 selection:text-cyan-200">
+    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-emerald-500/30 selection:text-emerald-200">
       {/* Toast Notification */}
       {syncToast && (
         <div className="fixed top-16 left-1/2 -translate-x-1/2 z-50 bg-emerald-950/90 border border-emerald-500 text-emerald-200 px-4 py-2 rounded-xl text-xs font-mono font-semibold shadow-xl backdrop-blur-md animate-in fade-in slide-in-from-top duration-200 flex items-center gap-2">
@@ -204,14 +186,14 @@ export const DashboardClient: React.FC<DashboardClientProps> = ({
       />
 
       {/* Hero / Terminal Intro Banner */}
-      <div className="border-b border-slate-800/80 bg-terminal-900/40 py-6 px-4 sm:px-6 lg:px-8">
-        <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+      <div className="border-b border-slate-800/80 bg-slate-900/40 py-4 sm:py-5 px-3 sm:px-6 lg:px-8">
+        <div className="max-w-[1700px] mx-auto flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
           <div>
-            <div className="flex items-center gap-2 text-xs font-mono text-cyan-400 uppercase tracking-wider mb-1">
+            <div className="flex items-center gap-2 text-xs font-mono text-emerald-400 uppercase tracking-wider mb-1">
               <Cpu className="w-3.5 h-3.5" />
               Automated Quantitative Parlay Architecture
             </div>
-            <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
+            <h1 className="text-xl sm:text-2xl lg:text-3xl font-extrabold text-white tracking-tight">
               Top 5 European Leagues Analytics Matrix
             </h1>
             <p className="text-xs sm:text-sm text-slate-400 mt-1 max-w-2xl leading-relaxed">
@@ -221,18 +203,20 @@ export const DashboardClient: React.FC<DashboardClientProps> = ({
 
           {/* Quick Metrics Pills */}
           <div className="flex flex-wrap gap-2 text-xs font-mono">
-            <div className="bg-slate-800/80 border border-slate-700/60 px-3 py-1.5 rounded-xl flex items-center gap-2">
+            <div className="bg-slate-900/80 border border-slate-800 px-3 py-1.5 rounded-xl flex items-center gap-2">
               <Database className="w-3.5 h-3.5 text-cyan-400" />
               <span className="text-slate-400">Source:</span>
-              <strong className="text-cyan-300 uppercase">{dataSource === 'supabase' ? 'Supabase Live' : 'Live Engine'}</strong>
+              <strong className="text-cyan-300 uppercase">
+                {dataSource === 'supabase' ? 'Supabase Live' : 'Live Engine'}
+              </strong>
             </div>
-            <div className="bg-slate-800/80 border border-slate-700/60 px-3 py-1.5 rounded-xl flex items-center gap-2">
+            <div className="bg-slate-900/80 border border-slate-800 px-3 py-1.5 rounded-xl flex items-center gap-2">
               <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
               <span className="text-slate-400">Fixtures:</span>
               <strong className="text-white">{fixtures.length}</strong>
             </div>
-            <div className="bg-slate-800/80 border border-slate-700/60 px-3 py-1.5 rounded-xl flex items-center gap-2">
-              <TrendingUp className="w-3.5 h-3.5 text-cyan-400" />
+            <div className="bg-slate-900/80 border border-slate-800 px-3 py-1.5 rounded-xl flex items-center gap-2">
+              <TrendingUp className="w-3.5 h-3.5 text-emerald-400" />
               <span className="text-slate-400">+EV Bets Detected:</span>
               <strong className="text-emerald-400">{totalValueBets}</strong>
             </div>
@@ -240,136 +224,136 @@ export const DashboardClient: React.FC<DashboardClientProps> = ({
         </div>
       </div>
 
-      {/* Main Content Area */}
-      <main className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-6 space-y-6">
-        {/* Real-time Live Score Ticker */}
-        <LiveScoreTicker initialNextKickoff={fixtures[0]?.match_time} />
+      {/* 3-COLUMN MAIN SPORTSBOOK TERMINAL GRID */}
+      <main className="flex-1 max-w-[1700px] mx-auto w-full px-2 sm:px-4 lg:px-6 py-4">
+        <div className="flex flex-col lg:flex-row items-start gap-4">
+          {/* COLUMN 1: LEFT SIDEBAR (220px - 260px) */}
+          <SportsbookSidebar
+            selectedLeague={selectedLeague}
+            onSelectLeague={(league) => {
+              setSelectedLeague(league);
+            }}
+            leagueCounts={fixtureCounts}
+          />
 
-        {/* VIEW A: AI Curated Parlays */}
-        {activeTab === 'ai-parlays' && (
-          <div className="space-y-6 animate-in fade-in duration-200">
-            {/* Historical Track Record & Hit-Rate */}
+          {/* COLUMN 2: MIDDLE COLUMN: MAIN FEED & HIGH-DENSITY ODDS TABLE */}
+          <div className="flex-1 min-w-0 w-full space-y-4">
+            {/* Live Score Ticker Strip */}
+            <LiveScoreTicker initialNextKickoff={fixtures[0]?.match_time} />
+
+            {/* Historical Track Record & Hit-Rate Tracker */}
             <HitRateTracker parlays={parlays} />
 
-            {/* Curated Slips Section */}
-            <div>
-              <div className="flex items-center justify-between mb-4">
-                <div>
-                  <h2 className="text-lg font-bold text-white flex items-center gap-2">
-                    <Sparkles className="w-4 h-4 text-cyan-400" />
-                    Today's Curated Quantitative Parlays
-                  </h2>
-                  <p className="text-xs text-slate-400 mt-0.5">
-                    Algorithmically balanced combinations optimized for risk-adjusted growth.
-                  </p>
+            {/* TAB VIEW A: AI Curated Accumulators */}
+            {activeTab === 'ai-parlays' && (
+              <div className="space-y-4 animate-in fade-in duration-150">
+                <div className="flex items-center justify-between pb-1 border-b border-slate-800/60">
+                  <div>
+                    <h2 className="text-base font-bold text-white flex items-center gap-2">
+                      <Sparkles className="w-4 h-4 text-cyan-400" />
+                      Today's Curated Quantitative Parlays
+                    </h2>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      Algorithmically balanced combinations optimized for risk-adjusted growth.
+                    </p>
+                  </div>
                 </div>
-              </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                {(parlays.filter((p) => p.status === 'pending').length > 0
-                  ? parlays.filter((p) => p.status === 'pending').slice(0, 3)
-                  : parlays.slice(0, 3)
-                ).map((parlay) => (
-                  <AIParlayCard
-                    key={parlay.id}
-                    parlay={parlay}
-                    onTailSlip={handleTailSlip}
-                  />
-                ))}
-              </div>
-            </div>
-
-            {/* Educational Info Card */}
-            <div className="bg-terminal-900/60 border border-slate-800/80 rounded-xl p-4 text-xs text-slate-400 flex items-start gap-3">
-              <Info className="w-4 h-4 text-cyan-400 shrink-0 mt-0.5" />
-              <div className="leading-relaxed">
-                <strong className="text-slate-200">Quantitative Model Note: </strong>
-                Curated slips employ independent joint Poisson probabilities across the Premier League, La Liga, Serie A, Bundesliga, and Ligue 1. Click <em>"Tail This Parlay Slip"</em> to test custom bankrolls and calculate 1/4 Kelly stake allocations in real-time.
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* VIEW B: Interactive Parlay Builder */}
-        {activeTab === 'builder' && (
-          <div className="space-y-6 animate-in fade-in duration-200">
-            {/* League Selection Filter */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2">
-              <div>
-                <h2 className="text-lg font-bold text-white flex items-center gap-2">
-                  <Layers className="w-4 h-4 text-cyan-400" />
-                  Live Match Odds & Quant Matrix
-                </h2>
-                <p className="text-xs text-slate-400 mt-0.5">
-                  Select outcomes to build your custom accumulator. Odds highlighted in emerald carry positive Expected Value (+EV).
-                </p>
-              </div>
-              <LeagueFilter
-                selectedLeague={selectedLeague}
-                onSelectLeague={setSelectedLeague}
-                fixtureCounts={fixtureCounts}
-              />
-            </div>
-
-            {/* Gameweek Round Indicator & View Toggle */}
-            {displayedFixtures.length > 0 && (
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs font-mono text-slate-400 bg-terminal-900/60 border border-slate-800/80 px-3.5 py-2 rounded-xl">
-                <div className="flex items-center gap-2">
-                  <Calendar className="w-3.5 h-3.5 text-cyan-400" />
-                  <span>
-                    Round: <strong className="text-white">{showAllMatches ? 'All Scheduled Matches' : 'Upcoming Matchday Round'}</strong> ({displayedFixtures.length} matches sorted by kickoff)
-                  </span>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  {(parlays.filter((p) => p.status === 'pending').length > 0
+                    ? parlays.filter((p) => p.status === 'pending').slice(0, 3)
+                    : parlays.slice(0, 3)
+                  ).map((parlay) => (
+                    <AIParlayCard
+                      key={parlay.id}
+                      parlay={parlay}
+                      onTailSlip={handleTailSlip}
+                    />
+                  ))}
                 </div>
-                {leagueFilteredFixtures.length > 10 && (
+
+                {/* Quick Link to Switch into Odds Board */}
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 p-3 rounded-xl bg-slate-900/80 border border-slate-800 text-xs font-mono">
+                  <div className="flex items-center gap-2 text-slate-300">
+                    <Layers className="w-4 h-4 text-emerald-400" />
+                    <span>Want to build custom slips? Explore high-density odds across all top leagues.</span>
+                  </div>
                   <button
-                    onClick={() => setShowAllMatches(!showAllMatches)}
-                    className="text-cyan-400 hover:text-cyan-300 font-semibold hover:underline text-left sm:text-right"
+                    type="button"
+                    onClick={() => setActiveTab('builder')}
+                    className="px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold transition-all shrink-0 cursor-pointer"
                   >
-                    {showAllMatches ? 'Show Upcoming Round Only (Max 10)' : `Show All ${leagueFilteredFixtures.length} Matches`}
+                    View Odds Terminal
                   </button>
-                )}
+                </div>
               </div>
             )}
 
-            {/* Match Cards Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {displayedFixtures.map((fixture) => (
-                <MatchCard
-                  key={fixture.id}
-                  fixture={fixture}
+            {/* TAB VIEW B: High-Density Sportsbook Odds Terminal */}
+            {activeTab === 'builder' && (
+              <div className="space-y-4 animate-in fade-in duration-150">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-1 border-b border-slate-800/60">
+                  <div>
+                    <h2 className="text-base font-bold text-white flex items-center gap-2">
+                      <Layers className="w-4 h-4 text-cyan-400" />
+                      Live Match Odds & Quant Matrix
+                    </h2>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      Select outcomes to build your custom accumulator. Odds highlighted in emerald carry positive Expected Value (+EV).
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2 text-xs font-mono text-slate-400">
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                    <span>Selected: <strong className="text-emerald-400">{selectedLeague === 'ALL' ? 'All Top 5 Leagues' : selectedLeague}</strong></span>
+                  </div>
+                </div>
+
+                {/* The Sportsbook Table (1xBet / Pinnacle Architecture) */}
+                <SportsbookTable
+                  fixtures={sortedFixtures}
                   selectedLegs={selectedLegs}
                   onToggleLeg={handleToggleLeg}
+                  onOpenMatrix={(fixture) => setMatrixFixture(fixture)}
+                  selectedLeague={selectedLeague}
                 />
-              ))}
-            </div>
-
-            {displayedFixtures.length === 0 && (
-              <div className="bg-terminal-900 border border-slate-800 rounded-xl p-12 text-center">
-                <p className="text-sm text-slate-400">
-                  No upcoming fixtures found for the selected league filter.
-                </p>
               </div>
             )}
           </div>
-        )}
+
+          {/* COLUMN 3: RIGHT SIDEBAR: BETSLIP & AI PARLAYS DRAWER (300px - 340px) */}
+          <SportsbookBetslip
+            legs={selectedLegs}
+            onRemoveLeg={handleRemoveLeg}
+            onClearSlip={handleClearSlip}
+            parlays={parlays}
+            onTailSlip={handleTailSlip}
+          />
+        </div>
       </main>
 
-      {/* Floating Betting Slip Drawer */}
-      <BettingSlip
-        legs={selectedLegs}
-        onRemoveLeg={handleRemoveLeg}
-        onClearSlip={handleClearSlip}
-      />
+      {/* 6x6 Bivariate Poisson Score Matrix Modal */}
+      {matrixFixture && (
+        <ScoreMatrixModal
+          fixture={matrixFixture}
+          analysis={matrixFixture.quantAnalysis || analyzeFixtureQuant(matrixFixture)}
+          onClose={() => setMatrixFixture(null)}
+        />
+      )}
 
-      {/* Minimal Footer */}
-      <footer className="border-t border-slate-800/80 bg-terminal-950 py-6 px-4 sm:px-6 lg:px-8 text-center text-xs text-slate-400 font-mono">
-        <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3">
+      {/* Minimal Sportsbook Terminal Footer */}
+      <footer className="border-t border-slate-800/80 bg-slate-950 py-5 px-4 sm:px-6 lg:px-8 text-center text-xs text-slate-400 font-mono">
+        <div className="max-w-[1700px] mx-auto flex flex-col sm:flex-row items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-emerald-400" />
-            <span>OddsMatrix Quantitative Engine • Zero-Maintenance Serverless</span>
+            <span className="text-slate-300 font-semibold">
+              OddsMatrix Quantitative Terminal
+            </span>
+            <span className="text-slate-600">•</span>
+            <span>3-Column 1xBet / Pinnacle Desktop Architecture</span>
           </div>
-          <div>
-            Data sources: Football-Data.org & The Odds API • For analytical and educational use only
+          <div className="text-slate-500 text-[11px]">
+            Data sources: Football-Data.org & The Odds API • Zero-Maintenance Serverless
           </div>
         </div>
       </footer>
