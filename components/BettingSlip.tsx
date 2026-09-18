@@ -16,6 +16,7 @@ import {
   ShieldAlert,
 } from 'lucide-react';
 import { EVBadge } from '@/components/StatBadge';
+import { TeamCrest } from '@/components/TeamCrest';
 
 interface BettingSlipProps {
   legs: LegSelection[];
@@ -132,9 +133,13 @@ export const BettingSlip: React.FC<BettingSlipProps> = ({
                 key={`${leg.fixtureId}-${leg.market}-${leg.selection}`}
                 className="bg-slate-800/50 border border-slate-700/60 rounded-xl p-3 flex items-center justify-between text-xs"
               >
-                <div className="space-y-1">
-                  <div className="font-semibold text-white">
-                    {leg.homeTeam} vs {leg.awayTeam}
+                <div className="space-y-1.5">
+                  <div className="flex items-center gap-1.5 font-bold text-white">
+                    <TeamCrest src={leg.homeCrest} name={leg.homeTeam} size="xs" />
+                    <span>{leg.homeTeam}</span>
+                    <span className="text-slate-500 font-normal text-[11px]">vs</span>
+                    <TeamCrest src={leg.awayCrest} name={leg.awayTeam} size="xs" />
+                    <span>{leg.awayTeam}</span>
                   </div>
                   <div className="flex items-center gap-2 text-[11px] font-mono text-slate-400">
                     <span>

@@ -3,6 +3,7 @@
 import React from 'react';
 import { Fixture, QuantMatchAnalysis } from '@/types';
 import { X, Sparkles, Activity } from 'lucide-react';
+import { TeamCrest } from '@/components/TeamCrest';
 
 interface ScoreMatrixModalProps {
   fixture: Fixture;
@@ -37,9 +38,13 @@ export const ScoreMatrixModal: React.FC<ScoreMatrixModalProps> = ({
               <Activity className="w-3.5 h-3.5" />
               Bivariate Poisson Quant Model
             </div>
-            <h3 className="text-lg font-bold text-white mt-1">
-              {homeName} vs {awayName}
-            </h3>
+            <div className="flex items-center gap-2.5 mt-1.5">
+              <TeamCrest src={fixture.homeTeam?.crest_url} name={homeName} size="sm" />
+              <h3 className="text-lg font-bold text-white">
+                {homeName} vs {awayName}
+              </h3>
+              <TeamCrest src={fixture.awayTeam?.crest_url} name={awayName} size="sm" />
+            </div>
             <p className="text-xs text-slate-400 mt-0.5">
               6×6 Score Probability Heatmap & Derived Market Probabilities
             </p>
@@ -55,8 +60,11 @@ export const ScoreMatrixModal: React.FC<ScoreMatrixModalProps> = ({
         {/* Expected Goals Indicators */}
         <div className="grid grid-cols-2 gap-3 my-4">
           <div className="bg-slate-800/60 border border-slate-700/50 rounded-lg p-3">
-            <div className="text-xs text-slate-400">{homeName} Expected Goals (λ)</div>
-            <div className="text-xl font-mono font-bold text-cyan-400 mt-0.5">
+            <div className="flex items-center gap-1.5 text-xs text-slate-400">
+              <TeamCrest src={fixture.homeTeam?.crest_url} name={homeName} size="xs" />
+              <span>{homeName} Expected Goals (λ)</span>
+            </div>
+            <div className="text-xl font-mono font-bold text-cyan-400 mt-1">
               {lambdaHome.toFixed(2)} <span className="text-xs font-normal text-slate-400">goals</span>
             </div>
             <div className="text-[11px] text-slate-400 mt-1">
@@ -64,8 +72,11 @@ export const ScoreMatrixModal: React.FC<ScoreMatrixModalProps> = ({
             </div>
           </div>
           <div className="bg-slate-800/60 border border-slate-700/50 rounded-lg p-3">
-            <div className="text-xs text-slate-400">{awayName} Expected Goals (λ)</div>
-            <div className="text-xl font-mono font-bold text-cyan-400 mt-0.5">
+            <div className="flex items-center gap-1.5 text-xs text-slate-400">
+              <TeamCrest src={fixture.awayTeam?.crest_url} name={awayName} size="xs" />
+              <span>{awayName} Expected Goals (λ)</span>
+            </div>
+            <div className="text-xl font-mono font-bold text-cyan-400 mt-1">
               {lambdaAway.toFixed(2)} <span className="text-xs font-normal text-slate-400">goals</span>
             </div>
             <div className="text-[11px] text-slate-400 mt-1">

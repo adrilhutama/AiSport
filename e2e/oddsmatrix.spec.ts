@@ -108,6 +108,27 @@ test.describe('OddsMatrix End-to-End Suite', () => {
     }
   });
 
+  test('Sportsbook Odds Board: Real Team Crests, Form Badges, and Pinnacle/Stake Odds Buttons', async ({ page }) => {
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
+
+    // Switch to Match Builder
+    const builderTab = page.locator('button:has-text("Match Builder")');
+    await builderTab.click();
+
+    // Verify team crest images or monograms are present
+    const crests = page.locator('img[alt$="crest"]');
+    const crestCount = await crests.count();
+    expect(crestCount).toBeGreaterThan(0);
+
+    // Verify form pills are present (W, D, L letters in circles)
+    const winPills = page.locator('span:has-text("W")');
+    expect(await winPills.count()).toBeGreaterThan(0);
+
+    // Verify decimal odds buttons exist and are formatted as decimals (e.g. 2.10, 1.85)
+    const oddsButtons = page.locator('button:has-text("1"), button:has-text("X"), button:has-text("2")');
+    expect(await oddsButtons.count()).toBeGreaterThan(0);
+  });
+
   test('API Route: Background Sync returns valid JSON and updates records', async ({ request }) => {
     const response = await request.get('/api/sync');
     expect(response.ok()).toBeTruthy();

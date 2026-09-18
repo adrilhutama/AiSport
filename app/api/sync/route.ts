@@ -67,6 +67,7 @@ async function handleSync(request: NextRequest) {
         attack_rating: t.attack_rating,
         defense_rating: t.defense_rating,
         form: t.form,
+        crest_url: t.crest_url || null,
       }));
 
       const { error: teamsErr } = await supabase
@@ -164,6 +165,7 @@ async function handleSync(request: NextRequest) {
     attack_rating: number;
     defense_rating: number;
     form: string;
+    crest_url?: string | null;
   }>();
 
   // Pre-fill with baseline known teams so all standard slugs exist
@@ -176,6 +178,7 @@ async function handleSync(request: NextRequest) {
       attack_rating: team.attack_rating,
       defense_rating: team.defense_rating,
       form: team.form,
+      crest_url: team.crest_url || null,
     });
   }
 
@@ -215,6 +218,7 @@ async function handleSync(request: NextRequest) {
         const table = fdData.standings?.[0]?.table || [];
         for (const row of table) {
           const rawTeamName = row.team?.name || '';
+          const crestUrl = row.team?.crest || '';
           const normId = findNormalizedTeamId(rawTeamName, code) || cleanTeamString(rawTeamName).replace(/\s+/g, '-');
           if (normId) {
             const played = Math.max(1, row.playedGames || 1);
@@ -235,6 +239,7 @@ async function handleSync(request: NextRequest) {
               attack_rating: attackRating,
               defense_rating: defenseRating,
               form: parseTeamForm(row.form),
+              crest_url: crestUrl || allTeamsMap.get(normId)?.crest_url || null,
             });
           }
         }
@@ -285,6 +290,7 @@ async function handleSync(request: NextRequest) {
               attack_rating: 1.0,
               defense_rating: 1.0,
               form: 'N/A',
+              crest_url: null,
             });
           }
 
@@ -297,6 +303,7 @@ async function handleSync(request: NextRequest) {
               attack_rating: 1.0,
               defense_rating: 1.0,
               form: 'N/A',
+              crest_url: null,
             });
           }
 

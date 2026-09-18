@@ -7,6 +7,7 @@ export const LEAGUES_DATA: Record<LeagueCode, LeagueInfo> = {
     name: 'Premier League',
     country: 'England',
     flag: '🏴󠁧󠁢󠁥󠁮󠁧󠁿',
+    emblem_url: 'https://crests.football-data.org/PL.png',
     avgHomeGoals: 1.62,
     avgAwayGoals: 1.34,
   },
@@ -16,6 +17,7 @@ export const LEAGUES_DATA: Record<LeagueCode, LeagueInfo> = {
     name: 'La Liga',
     country: 'Spain',
     flag: '🇪🇸',
+    emblem_url: 'https://crests.football-data.org/PD.png',
     avgHomeGoals: 1.48,
     avgAwayGoals: 1.15,
   },
@@ -25,6 +27,7 @@ export const LEAGUES_DATA: Record<LeagueCode, LeagueInfo> = {
     name: 'Serie A',
     country: 'Italy',
     flag: '🇮🇹',
+    emblem_url: 'https://crests.football-data.org/SA.png',
     avgHomeGoals: 1.42,
     avgAwayGoals: 1.18,
   },
@@ -34,6 +37,7 @@ export const LEAGUES_DATA: Record<LeagueCode, LeagueInfo> = {
     name: 'Bundesliga',
     country: 'Germany',
     flag: '🇩🇪',
+    emblem_url: 'https://crests.football-data.org/BL1.png',
     avgHomeGoals: 1.74,
     avgAwayGoals: 1.41,
   },
@@ -43,6 +47,7 @@ export const LEAGUES_DATA: Record<LeagueCode, LeagueInfo> = {
     name: 'Ligue 1',
     country: 'France',
     flag: '🇫🇷',
+    emblem_url: 'https://crests.football-data.org/FL1.png',
     avgHomeGoals: 1.45,
     avgAwayGoals: 1.20,
   },
@@ -58,6 +63,7 @@ export const MOCK_TEAMS: Record<string, Team> = {
     attack_rating: 1.38,
     defense_rating: 0.65,
     form: 'WWWDW',
+    crest_url: 'https://crests.football-data.org/57.png',
   },
   'manchester-city': {
     id: 'manchester-city',
@@ -67,6 +73,7 @@ export const MOCK_TEAMS: Record<string, Team> = {
     attack_rating: 1.45,
     defense_rating: 0.72,
     form: 'WDWWW',
+    crest_url: 'https://crests.football-data.org/65.png',
   },
   'liverpool': {
     id: 'liverpool',
@@ -76,6 +83,7 @@ export const MOCK_TEAMS: Record<string, Team> = {
     attack_rating: 1.40,
     defense_rating: 0.70,
     form: 'WWWLW',
+    crest_url: 'https://crests.football-data.org/64.png',
   },
   'chelsea': {
     id: 'chelsea',
@@ -85,6 +93,7 @@ export const MOCK_TEAMS: Record<string, Team> = {
     attack_rating: 1.18,
     defense_rating: 0.92,
     form: 'WDLWW',
+    crest_url: 'https://crests.football-data.org/61.png',
   },
   'tottenham': {
     id: 'tottenham',
@@ -94,6 +103,7 @@ export const MOCK_TEAMS: Record<string, Team> = {
     attack_rating: 1.22,
     defense_rating: 1.05,
     form: 'LWWDL',
+    crest_url: 'https://crests.football-data.org/73.png',
   },
   'aston-villa': {
     id: 'aston-villa',
@@ -103,6 +113,7 @@ export const MOCK_TEAMS: Record<string, Team> = {
     attack_rating: 1.20,
     defense_rating: 0.88,
     form: 'WWLDW',
+    crest_url: 'https://crests.football-data.org/58.png',
   },
   'newcastle': {
     id: 'newcastle',
@@ -112,6 +123,7 @@ export const MOCK_TEAMS: Record<string, Team> = {
     attack_rating: 1.15,
     defense_rating: 0.94,
     form: 'DWWLD',
+    crest_url: 'https://crests.football-data.org/67.png',
   },
   'wolves': {
     id: 'wolves',
@@ -121,6 +133,7 @@ export const MOCK_TEAMS: Record<string, Team> = {
     attack_rating: 0.88,
     defense_rating: 1.25,
     form: 'LDLLD',
+    crest_url: 'https://crests.football-data.org/76.png',
   },
 
   // La Liga
@@ -132,6 +145,7 @@ export const MOCK_TEAMS: Record<string, Team> = {
     attack_rating: 1.46,
     defense_rating: 0.62,
     form: 'WWWDW',
+    crest_url: 'https://crests.football-data.org/86.png',
   },
   'barcelona': {
     id: 'barcelona',
@@ -141,6 +155,7 @@ export const MOCK_TEAMS: Record<string, Team> = {
     attack_rating: 1.50,
     defense_rating: 0.78,
     form: 'WWWWW',
+    crest_url: 'https://crests.football-data.org/81.png',
   },
   'atletico-madrid': {
     id: 'atletico-madrid',
@@ -150,6 +165,7 @@ export const MOCK_TEAMS: Record<string, Team> = {
     attack_rating: 1.22,
     defense_rating: 0.68,
     form: 'WDWDW',
+    crest_url: 'https://crests.football-data.org/78.png',
   },
   'athletic-bilbao': {
     id: 'athletic-bilbao',
@@ -159,6 +175,7 @@ export const MOCK_TEAMS: Record<string, Team> = {
     attack_rating: 1.12,
     defense_rating: 0.85,
     form: 'WLDWW',
+    crest_url: 'https://crests.football-data.org/77.png',
   },
   'villarreal': {
     id: 'villarreal',
@@ -168,6 +185,7 @@ export const MOCK_TEAMS: Record<string, Team> = {
     attack_rating: 1.25,
     defense_rating: 1.15,
     form: 'WWLDW',
+    crest_url: 'https://crests.football-data.org/94.png',
   },
   'sevilla': {
     id: 'sevilla',
@@ -177,6 +195,7 @@ export const MOCK_TEAMS: Record<string, Team> = {
     attack_rating: 0.95,
     defense_rating: 1.08,
     form: 'LLDWL',
+    crest_url: 'https://crests.football-data.org/559.png',
   },
 
   // Serie A
@@ -188,6 +207,7 @@ export const MOCK_TEAMS: Record<string, Team> = {
     attack_rating: 1.42,
     defense_rating: 0.60,
     form: 'WWDWW',
+    crest_url: 'https://crests.football-data.org/108.png',
   },
   'juventus': {
     id: 'juventus',
@@ -197,6 +217,7 @@ export const MOCK_TEAMS: Record<string, Team> = {
     attack_rating: 1.10,
     defense_rating: 0.52,
     form: 'DDWWD',
+    crest_url: 'https://crests.football-data.org/109.png',
   },
   'ac-milan': {
     id: 'ac-milan',
@@ -206,6 +227,7 @@ export const MOCK_TEAMS: Record<string, Team> = {
     attack_rating: 1.28,
     defense_rating: 0.95,
     form: 'LWWLD',
+    crest_url: 'https://crests.football-data.org/98.png',
   },
   'napoli': {
     id: 'napoli',
@@ -215,6 +237,7 @@ export const MOCK_TEAMS: Record<string, Team> = {
     attack_rating: 1.26,
     defense_rating: 0.75,
     form: 'WWWDW',
+    crest_url: 'https://crests.football-data.org/113.png',
   },
   'atalanta': {
     id: 'atalanta',
@@ -224,6 +247,7 @@ export const MOCK_TEAMS: Record<string, Team> = {
     attack_rating: 1.34,
     defense_rating: 1.02,
     form: 'WLWWL',
+    crest_url: 'https://crests.football-data.org/102.png',
   },
   'roma': {
     id: 'roma',
@@ -233,6 +257,7 @@ export const MOCK_TEAMS: Record<string, Team> = {
     attack_rating: 1.14,
     defense_rating: 0.90,
     form: 'DDWDL',
+    crest_url: 'https://crests.football-data.org/100.png',
   },
 
   // Bundesliga
@@ -244,6 +269,7 @@ export const MOCK_TEAMS: Record<string, Team> = {
     attack_rating: 1.60,
     defense_rating: 0.72,
     form: 'WWWWW',
+    crest_url: 'https://crests.football-data.org/5.png',
   },
   'leverkusen': {
     id: 'leverkusen',
@@ -253,6 +279,7 @@ export const MOCK_TEAMS: Record<string, Team> = {
     attack_rating: 1.48,
     defense_rating: 0.80,
     form: 'WDWWW',
+    crest_url: 'https://crests.football-data.org/3.png',
   },
   'dortmund': {
     id: 'dortmund',
@@ -262,6 +289,7 @@ export const MOCK_TEAMS: Record<string, Team> = {
     attack_rating: 1.35,
     defense_rating: 0.98,
     form: 'WLWDW',
+    crest_url: 'https://crests.football-data.org/4.png',
   },
   'rb-leipzig': {
     id: 'rb-leipzig',
@@ -271,6 +299,7 @@ export const MOCK_TEAMS: Record<string, Team> = {
     attack_rating: 1.28,
     defense_rating: 0.76,
     form: 'DWWDW',
+    crest_url: 'https://crests.football-data.org/721.png',
   },
   'stuttgart': {
     id: 'stuttgart',
@@ -280,6 +309,7 @@ export const MOCK_TEAMS: Record<string, Team> = {
     attack_rating: 1.32,
     defense_rating: 1.05,
     form: 'WWLDW',
+    crest_url: 'https://crests.football-data.org/10.png',
   },
   'eintracht-frankfurt': {
     id: 'eintracht-frankfurt',
@@ -289,6 +319,7 @@ export const MOCK_TEAMS: Record<string, Team> = {
     attack_rating: 1.24,
     defense_rating: 1.00,
     form: 'DWWLW',
+    crest_url: 'https://crests.football-data.org/19.png',
   },
 
   // Ligue 1
@@ -300,6 +331,7 @@ export const MOCK_TEAMS: Record<string, Team> = {
     attack_rating: 1.55,
     defense_rating: 0.68,
     form: 'WWWDW',
+    crest_url: 'https://crests.football-data.org/524.png',
   },
   'marseille': {
     id: 'marseille',
@@ -309,6 +341,7 @@ export const MOCK_TEAMS: Record<string, Team> = {
     attack_rating: 1.30,
     defense_rating: 0.85,
     form: 'WWLWW',
+    crest_url: 'https://crests.football-data.org/516.png',
   },
   'monaco': {
     id: 'monaco',
@@ -318,6 +351,7 @@ export const MOCK_TEAMS: Record<string, Team> = {
     attack_rating: 1.32,
     defense_rating: 0.80,
     form: 'WDWWW',
+    crest_url: 'https://crests.football-data.org/548.png',
   },
   'lille': {
     id: 'lille',
@@ -327,6 +361,7 @@ export const MOCK_TEAMS: Record<string, Team> = {
     attack_rating: 1.15,
     defense_rating: 0.78,
     form: 'WDLLW',
+    crest_url: 'https://crests.football-data.org/521.png',
   },
   'lyon': {
     id: 'lyon',
@@ -336,6 +371,7 @@ export const MOCK_TEAMS: Record<string, Team> = {
     attack_rating: 1.18,
     defense_rating: 1.12,
     form: 'LWWDL',
+    crest_url: 'https://crests.football-data.org/523.png',
   },
   'lens': {
     id: 'lens',
@@ -345,6 +381,7 @@ export const MOCK_TEAMS: Record<string, Team> = {
     attack_rating: 1.05,
     defense_rating: 0.65,
     form: 'DDWDD',
+    crest_url: 'https://crests.football-data.org/546.png',
   }
 };
 

@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS public.teams (
     attack_rating NUMERIC(5,2) DEFAULT 1.00,   -- Relative attacking strength (1.00 = league baseline)
     defense_rating NUMERIC(5,2) DEFAULT 1.00,  -- Relative defensive conceded multiplier (1.00 = baseline)
     form TEXT DEFAULT 'N/A',                   -- Last 5 matches (W, D, L) string
+    crest_url TEXT,                            -- Official SVG/PNG crest URL from Football-Data.org
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );

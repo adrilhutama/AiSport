@@ -74,6 +74,7 @@ export async function getOddsMatrixData(): Promise<{
         attack_rating: 1.15,
         defense_rating: 0.95,
         form: 'N/A',
+        crest_url: MOCK_TEAMS[f.home_team_id]?.crest_url,
       };
 
       const awayTeam = teamMap.get(f.away_team_id) || {
@@ -84,6 +85,7 @@ export async function getOddsMatrixData(): Promise<{
         attack_rating: 1.05,
         defense_rating: 1.05,
         form: 'N/A',
+        crest_url: MOCK_TEAMS[f.away_team_id]?.crest_url,
       };
 
       const marketOdds = oddsMap.get(f.id) || {

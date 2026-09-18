@@ -62,6 +62,10 @@ async function runSmokeTests() {
       if (f.homeTeam.form === 'DDDDD' || f.awayTeam.form === 'DDDDD') {
         throw new Error(`Dummy form 'DDDDD' found on team in fixture ${f.id}`);
       }
+      // Crest check: official crest URL present
+      if (!f.homeTeam.crest_url || !f.awayTeam.crest_url) {
+        throw new Error(`Fixture ${f.id} missing crest_url for home or away team`);
+      }
       // Quant EV check: no runaway outliers (> 25%)
       if (f.quantAnalysis) {
         const evs = f.quantAnalysis.expectedValues;
@@ -72,7 +76,7 @@ async function runSmokeTests() {
         }
       }
     }
-    console.log(`   ✅ All ${fixtures.length} fixtures passed strict league isolation, valid form data, and bounded EV (<= 25%).`);
+    console.log(`   ✅ All ${fixtures.length} fixtures passed strict league isolation, valid form data, official crest URLs, and bounded EV (<= 25%).`);
 
     console.log('\n🎉 All smoke tests passed successfully!');
   } catch (err) {

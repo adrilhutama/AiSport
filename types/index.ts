@@ -6,6 +6,7 @@ export interface LeagueInfo {
   name: string;
   country: string;
   flag: string;
+  emblem_url?: string;
   avgHomeGoals: number;
   avgAwayGoals: number;
 }
@@ -18,6 +19,8 @@ export interface Team {
   attack_rating: number;  // Relative attacking multiplier (1.0 = league average)
   defense_rating: number; // Relative defensive goals conceded multiplier (1.0 = average)
   form: string;           // e.g. "WWDLW"
+  crest_url?: string;     // Official SVG/PNG crest URL from Football-Data.org
+  logo_url?: string;      // Alias for crest_url
 }
 
 export interface MarketOdds {
@@ -81,6 +84,8 @@ export interface LegSelection {
   league: LeagueCode;
   homeTeam: string;
   awayTeam: string;
+  homeCrest?: string;
+  awayCrest?: string;
   market: MarketType;
   selection: BetSelection;
   odds: number;
