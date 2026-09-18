@@ -262,7 +262,10 @@ export const DashboardClient: React.FC<DashboardClientProps> = ({
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                {parlays.map((parlay) => (
+                {(parlays.filter((p) => p.status === 'pending').length > 0
+                  ? parlays.filter((p) => p.status === 'pending').slice(0, 3)
+                  : parlays.slice(0, 3)
+                ).map((parlay) => (
                   <AIParlayCard
                     key={parlay.id}
                     parlay={parlay}

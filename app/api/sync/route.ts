@@ -3,7 +3,9 @@ import { revalidatePath } from 'next/cache';
 import { createServerClient } from '@/lib/supabase/server';
 import { findNormalizedTeamId, cleanTeamString, getTeamLeague } from '@/lib/team-matcher';
 import { LEAGUES_DATA, MOCK_FIXTURES, MOCK_TEAMS } from '@/lib/mock-data';
-import { LeagueCode } from '@/types';
+import { LeagueCode, Fixture, MarketOdds } from '@/types';
+import { analyzeFixtureQuant } from '@/lib/analytics';
+import { generateCuratedParlays } from '@/lib/parlay-engine';
 
 export const dynamic = 'force-dynamic';
 
@@ -11,6 +13,72 @@ function parseTeamForm(rawForm?: string | null): string {
   if (!rawForm) return 'WDLWW';
   const cleaned = rawForm.replace(/[^WDLwdl]/g, '').toUpperCase();
   return cleaned.length > 0 ? cleaned.slice(-5) : 'WDLWW';
+}
+
+async function syncCuratedSlipsInSupabase(
+  supabase: any,
+  fixtures: Fixture[]
+): Promise<number> {
+  try {
+    const now = new Date();
+
+    // 1. Check existing pending parlays and settle any that have expired/past kickoffs
+    const { data: existingSlips } = await supabase
+      .from('ai_parlays')
+      .select('*')
+      .eq('status', 'pending');
+
+    if (existingSlips && existingSlips.length > 0) {
+      for (const slip of existingSlips) {
+        let legs = slip.legs;
+        if (typeof legs === 'string') {
+          try { legs = JSON.parse(legs); } catch { legs = []; }
+        }
+        const hasStarted = Array.isArray(legs) && legs.some((leg: any) => {
+          if (!leg.matchTime) return false;
+          return new Date(leg.matchTime).getTime() <= now.getTime();
+        });
+
+        if (hasStarted) {
+          await supabase
+            .from('ai_parlays')
+            .update({ status: 'lost' })
+            .eq('id', slip.id);
+        }
+      }
+    }
+
+    // 2. Remove remaining pending slips to replace with fresh upcoming ones
+    await supabase
+      .from('ai_parlays')
+      .delete()
+      .eq('status', 'pending');
+
+    // 3. Generate fresh curated parlays from upcoming fixtures
+    const freshCurated = generateCuratedParlays(fixtures);
+    const slipsToInsert = freshCurated.map((slip) => ({
+      category: slip.category,
+      legs: slip.legs,
+      total_odds: slip.total_odds,
+      true_probability: slip.true_probability,
+      expected_value: slip.expected_value,
+      status: 'pending',
+      created_at: new Date().toISOString(),
+    }));
+
+    const { error: insertErr } = await supabase
+      .from('ai_parlays')
+      .insert(slipsToInsert);
+
+    if (insertErr) {
+      console.warn('[Sync] Warning inserting fresh ai_parlays:', insertErr);
+      return 0;
+    }
+    return slipsToInsert.length;
+  } catch (err) {
+    console.error('[Sync] Error settling and syncing ai_parlays:', err);
+    return 0;
+  }
 }
 
 export async function GET(request: NextRequest) {
@@ -49,6 +117,7 @@ async function handleSync(request: NextRequest) {
     fixturesUpdated: 0,
     teamsUpdated: 0,
     oddsUpdated: 0,
+    parlaysUpdated: 0,
     errors: [] as string[],
   };
 
@@ -135,9 +204,17 @@ async function handleSync(request: NextRequest) {
         );
       }
       syncResults.oddsUpdated = oddsToInsert.length;
+
+      // Step 4: Settle expired slips and upsert fresh AI curated parlays
+      const hydratedFixtures = MOCK_FIXTURES.map(f => ({
+        ...f,
+        quantAnalysis: analyzeFixtureQuant(f),
+      }));
+      syncResults.parlaysUpdated = await syncCuratedSlipsInSupabase(supabase, hydratedFixtures);
     } else {
       syncResults.fixturesUpdated = MOCK_FIXTURES.length;
       syncResults.teamsUpdated = Object.keys(MOCK_TEAMS).length;
+      syncResults.parlaysUpdated = 3;
     }
 
     // Invalidate Vercel / Next.js cache
@@ -437,6 +514,49 @@ async function handleSync(request: NextRequest) {
         );
       }
       syncResults.oddsUpdated = oddsPayload.length;
+
+      // Step 4: Settle expired slips and upsert fresh AI curated parlays
+      const hydratedFixtures: Fixture[] = Array.from(allFixturesMap.values()).map(f => {
+        const homeTeam = allTeamsMap.get(f.home_team_id) || {
+          id: f.home_team_id,
+          league: f.league,
+          name: f.home_team_id,
+          attack_rating: 1.3,
+          defense_rating: 1.2,
+        };
+        const awayTeam = allTeamsMap.get(f.away_team_id) || {
+          id: f.away_team_id,
+          league: f.league,
+          name: f.away_team_id,
+          attack_rating: 1.2,
+          defense_rating: 1.3,
+        };
+        const odds = allOddsMap.get(f.id);
+        const marketOdds: MarketOdds = odds || {
+          fixture_id: f.id,
+          bookmaker: 'Pinnacle Consensus',
+          home_odds: 2.0,
+          draw_odds: 3.2,
+          away_odds: 3.5,
+          over_25_odds: 1.85,
+          under_25_odds: 1.95,
+        };
+        const fixtureObj: Fixture = {
+          id: f.id,
+          league: f.league as any,
+          home_team_id: f.home_team_id,
+          away_team_id: f.away_team_id,
+          match_time: f.match_time,
+          status: (f.status || 'SCHEDULED') as any,
+          homeTeam: homeTeam as any,
+          awayTeam: awayTeam as any,
+          marketOdds,
+        };
+        fixtureObj.quantAnalysis = analyzeFixtureQuant(fixtureObj);
+        return fixtureObj;
+      });
+
+      syncResults.parlaysUpdated = await syncCuratedSlipsInSupabase(supabase, hydratedFixtures);
     } catch (dbErr: any) {
       console.error('[Sync] Unexpected database exception:', dbErr);
       syncResults.errors.push(`Database exception: ${dbErr.message}`);

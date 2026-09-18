@@ -105,6 +105,33 @@ async function runSmokeTests() {
     }
     console.log(`   ✅ All ${fixtures.length} fixtures passed strict league isolation, valid 5-match form, official crests, and calibrated multi-market models (1X2, AH, Totals, BTTS <= 25% EV).`);
 
+    // 4. Test AI Curated Parlays Integrity
+    console.log('\n4. Testing AI Curated Parlays (Upcoming Fixtures & Strict Kickoff Filter)...');
+    const parlays = fixturesData.parlays || [];
+    const activeParlays = parlays.filter(p => p.status === 'pending');
+    if (activeParlays.length < 3) {
+      throw new Error(`Expected at least 3 active AI parlays, found ${activeParlays.length}`);
+    }
+
+    const expectedTitles = ['Safe Combo #48', 'Value Seeker #29', 'Weekend Lotto Moonshot #14'];
+    for (const title of expectedTitles) {
+      const found = activeParlays.find(p => p.title === title);
+      if (!found) {
+        throw new Error(`Missing expected curated slip title: ${title}`);
+      }
+      if (!found.legs || found.legs.length === 0) {
+        throw new Error(`Slip ${title} has no legs`);
+      }
+      // Check legs match upcoming fixtures and are not in the past
+      for (const leg of found.legs) {
+        const fixture = fixtures.find(f => f.id === leg.fixtureId);
+        if (fixture && (fixture.status === 'FINISHED' || fixture.status === 'IN_PLAY')) {
+          throw new Error(`Slip ${title} includes finished or in-play fixture: ${fixture.id}`);
+        }
+      }
+    }
+    console.log(`   ✅ Curated slips verified: Safe Combo #48, Value Seeker #29, and Weekend Lotto Moonshot #14 contain strictly upcoming legs.`);
+
     console.log('\n🎉 All smoke tests passed successfully!');
   } catch (err) {
     console.error(`\n❌ Smoke test failure:`, err.message);

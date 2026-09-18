@@ -2,6 +2,7 @@ import { createServerClient } from '@/lib/supabase/server';
 import { Fixture, AIParlay, Team, MarketOdds } from '@/types';
 import { MOCK_FIXTURES, MOCK_HISTORICAL_PARLAYS, MOCK_TEAMS } from '@/lib/mock-data';
 import { analyzeFixtureQuant } from '@/lib/analytics';
+import { generateCuratedParlays } from '@/lib/parlay-engine';
 
 export async function getOddsMatrixData(): Promise<{
   fixtures: Fixture[];
@@ -11,12 +12,15 @@ export async function getOddsMatrixData(): Promise<{
   const supabase = createServerClient();
 
   if (!supabase) {
+    const fixtures = MOCK_FIXTURES.map(f => ({
+      ...f,
+      quantAnalysis: analyzeFixtureQuant(f),
+    }));
+    const activeSlips = generateCuratedParlays(fixtures);
+    const settledSlips = MOCK_HISTORICAL_PARLAYS.filter(p => p.status === 'won' || p.status === 'lost');
     return {
-      fixtures: MOCK_FIXTURES.map(f => ({
-        ...f,
-        quantAnalysis: analyzeFixtureQuant(f),
-      })),
-      parlays: MOCK_HISTORICAL_PARLAYS,
+      fixtures,
+      parlays: [...activeSlips, ...settledSlips],
       source: 'mock_fallback',
     };
   }
@@ -37,12 +41,15 @@ export async function getOddsMatrixData(): Promise<{
 
     // If no fixtures in Supabase, fall back to mock data
     if (fixturesRaw.length === 0) {
+      const fixtures = MOCK_FIXTURES.map(f => ({
+        ...f,
+        quantAnalysis: analyzeFixtureQuant(f),
+      }));
+      const activeSlips = generateCuratedParlays(fixtures);
+      const settledSlips = MOCK_HISTORICAL_PARLAYS.filter(p => p.status === 'won' || p.status === 'lost');
       return {
-        fixtures: MOCK_FIXTURES.map(f => ({
-          ...f,
-          quantAnalysis: analyzeFixtureQuant(f),
-        })),
-        parlays: MOCK_HISTORICAL_PARLAYS,
+        fixtures,
+        parlays: [...activeSlips, ...settledSlips],
         source: 'mock_fallback',
       };
     }
@@ -64,43 +71,32 @@ export async function getOddsMatrixData(): Promise<{
       oddsMap.set(o.fixture_id, o);
     }
 
-    // Assemble fixtures
+    // 2. Assemble hydrated Fixture objects with Quantitative Analysis
     const fixtures: Fixture[] = fixturesRaw.map((f: any) => {
-      const homeTeam = teamMap.get(f.home_team_id) || {
+      const homeTeam: Team = teamMap.get(f.home_team_id) || {
         id: f.home_team_id,
         league: f.league,
-        name: f.home_team_id,
+        name: f.home_team_id.replace(/-/g, ' ').toUpperCase(),
         aliases: [],
-        attack_rating: 1.15,
-        defense_rating: 0.95,
-        form: 'N/A',
-        crest_url: MOCK_TEAMS[f.home_team_id]?.crest_url,
+        form: 'WDLWW',
+        attack_rating: 1.3,
+        defense_rating: 1.2,
       };
 
-      const awayTeam = teamMap.get(f.away_team_id) || {
+      const awayTeam: Team = teamMap.get(f.away_team_id) || {
         id: f.away_team_id,
         league: f.league,
-        name: f.away_team_id,
+        name: f.away_team_id.replace(/-/g, ' ').toUpperCase(),
         aliases: [],
-        attack_rating: 1.05,
-        defense_rating: 1.05,
-        form: 'N/A',
-        crest_url: MOCK_TEAMS[f.away_team_id]?.crest_url,
+        form: 'WDLWW',
+        attack_rating: 1.2,
+        defense_rating: 1.3,
       };
 
-      const fallbackHomeForm = homeTeam.form && homeTeam.form !== 'N/A' 
-        ? homeTeam.form 
-        : (MOCK_TEAMS[f.home_team_id]?.form || 'WDLWW');
-      const fallbackAwayForm = awayTeam.form && awayTeam.form !== 'N/A' 
-        ? awayTeam.form 
-        : (MOCK_TEAMS[f.away_team_id]?.form || 'DWDWL');
+      const fallbackMock = MOCK_FIXTURES.find(mf => mf.id === f.id);
+      const fallbackMockOdds = fallbackMock?.marketOdds;
 
-      homeTeam.form = fallbackHomeForm;
-      awayTeam.form = fallbackAwayForm;
-
-      const fallbackMockOdds = MOCK_FIXTURES.find(mf => mf.id === f.id)?.marketOdds;
       const dbOdds = oddsMap.get(f.id);
-
       const marketOdds: MarketOdds = dbOdds || fallbackMockOdds || {
         fixture_id: f.id,
         bookmaker: 'Pinnacle Consensus',
@@ -137,34 +133,43 @@ export async function getOddsMatrixData(): Promise<{
       return fixtureObj;
     });
 
-    // Parse AI parlays
-    let parlays: AIParlay[] = [];
+    // Generate fresh curated parlays dynamically from live fixtures
+    const activeCuratedSlips = generateCuratedParlays(fixtures);
+
+    // Extract historical settled parlays for hit-rate tracking
+    let historicalParlays: AIParlay[] = [];
     if (parlaysRaw.length > 0) {
-      parlays = parlaysRaw.map((p: any) => {
-        let legs = p.legs;
-        if (typeof legs === 'string') {
-          try {
-            legs = JSON.parse(legs);
-          } catch {
-            legs = [];
+      historicalParlays = parlaysRaw
+        .filter((p: any) => p.status === 'won' || p.status === 'lost')
+        .map((p: any) => {
+          let legs = p.legs;
+          if (typeof legs === 'string') {
+            try {
+              legs = JSON.parse(legs);
+            } catch {
+              legs = [];
+            }
           }
-        }
-        return {
-          id: p.id,
-          category: p.category,
-          title: p.title || `${p.category.toUpperCase()} Slip`,
-          description: p.description || `Expected Value +${p.expected_value}%`,
-          legs: Array.isArray(legs) ? legs : [],
-          total_odds: Number(p.total_odds),
-          true_probability: Number(p.true_probability),
-          expected_value: Number(p.expected_value),
-          status: p.status || 'pending',
-          created_at: p.created_at || new Date().toISOString(),
-        };
-      });
-    } else {
-      parlays = MOCK_HISTORICAL_PARLAYS;
+          return {
+            id: p.id,
+            category: p.category,
+            title: p.title || (p.category === 'safe' ? 'Safe Combo #48' : p.category === 'value' ? 'Value Seeker #29' : 'Weekend Lotto Moonshot #14'),
+            description: p.description || `Expected Value +${p.expected_value}%`,
+            legs: Array.isArray(legs) ? legs : [],
+            total_odds: Number(p.total_odds),
+            true_probability: Number(p.true_probability),
+            expected_value: Number(p.expected_value),
+            status: p.status,
+            created_at: p.created_at || new Date().toISOString(),
+          };
+        });
     }
+
+    if (historicalParlays.length === 0) {
+      historicalParlays = MOCK_HISTORICAL_PARLAYS.filter((p) => p.status === 'won' || p.status === 'lost');
+    }
+
+    const parlays = [...activeCuratedSlips, ...historicalParlays];
 
     return {
       fixtures,
@@ -173,12 +178,15 @@ export async function getOddsMatrixData(): Promise<{
     };
   } catch (error) {
     console.error('Error fetching live data from Supabase, falling back to mock:', error);
+    const fixtures = MOCK_FIXTURES.map(f => ({
+      ...f,
+      quantAnalysis: analyzeFixtureQuant(f),
+    }));
+    const activeSlips = generateCuratedParlays(fixtures);
+    const settledSlips = MOCK_HISTORICAL_PARLAYS.filter(p => p.status === 'won' || p.status === 'lost');
     return {
-      fixtures: MOCK_FIXTURES.map(f => ({
-        ...f,
-        quantAnalysis: analyzeFixtureQuant(f),
-      })),
-      parlays: MOCK_HISTORICAL_PARLAYS,
+      fixtures,
+      parlays: [...activeSlips, ...settledSlips],
       source: 'mock_fallback',
     };
   }
