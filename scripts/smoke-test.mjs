@@ -58,25 +58,52 @@ async function runSmokeTests() {
           `Cross-League pairing violation detected in fixture ${f.id}: league ${f.league}, home ${f.homeTeam.name} (${f.homeTeam.league}), away ${f.awayTeam.name} (${f.awayTeam.league})`
         );
       }
-      // Form check: no dummy 'DDDDD'
-      if (f.homeTeam.form === 'DDDDD' || f.awayTeam.form === 'DDDDD') {
-        throw new Error(`Dummy form 'DDDDD' found on team in fixture ${f.id}`);
+      // Form check: no dummy 'DDDDD' or 'N/A'
+      if (!f.homeTeam.form || f.homeTeam.form === 'DDDDD' || f.homeTeam.form === 'N/A' || f.homeTeam.form.length !== 5) {
+        throw new Error(`Invalid form '${f.homeTeam.form}' found on team ${f.homeTeam.name}`);
+      }
+      if (!f.awayTeam.form || f.awayTeam.form === 'DDDDD' || f.awayTeam.form === 'N/A' || f.awayTeam.form.length !== 5) {
+        throw new Error(`Invalid form '${f.awayTeam.form}' found on team ${f.awayTeam.name}`);
       }
       // Crest check: official crest URL present
       if (!f.homeTeam.crest_url || !f.awayTeam.crest_url) {
         throw new Error(`Fixture ${f.id} missing crest_url for home or away team`);
       }
-      // Quant EV check: no runaway outliers (> 25%)
+      // Quant Multi-Market Derivations & EV bounds check
       if (f.quantAnalysis) {
+        const probs = f.quantAnalysis.trueProbabilities;
+        // Verify Totals sum
+        const totals15Sum = probs.over15 + probs.under15;
+        if (Math.abs(totals15Sum - 1.0) > 0.01) {
+          throw new Error(`Fixture ${f.id}: Over 1.5 + Under 1.5 true probabilities sum to ${totals15Sum}, expected 1.0`);
+        }
+        // Verify BTTS sum
+        const bttsSum = probs.bttsYes + probs.bttsNo;
+        if (Math.abs(bttsSum - 1.0) > 0.01) {
+          throw new Error(`Fixture ${f.id}: BTTS Yes + No true probabilities sum to ${bttsSum}, expected 1.0`);
+        }
+        // Verify Asian Handicap line -0.5 / +0.5 sum
+        const ah05Sum = (probs.asianHandicap['home_-0.5'] || 0) + (probs.asianHandicap['away_+0.5'] || 0);
+        if (Math.abs(ah05Sum - 1.0) > 0.02) {
+          throw new Error(`Fixture ${f.id}: AH -0.5/+0.5 true probabilities sum to ${ah05Sum}, expected 1.0`);
+        }
+
         const evs = f.quantAnalysis.expectedValues;
         for (const [key, val] of Object.entries(evs)) {
-          if (val > 25.01) {
+          if (typeof val === 'number' && val > 25.01) {
             throw new Error(`Runaway EV detected in fixture ${f.id} (${key}: +${val}% EV exceeds 25% boundary)`);
+          }
+          if (typeof val === 'object' && val !== null) {
+            for (const [subKey, subVal] of Object.entries(val)) {
+              if (subVal > 25.01) {
+                throw new Error(`Runaway EV detected in fixture ${f.id} (${key}.${subKey}: +${subVal}% EV exceeds 25% boundary)`);
+              }
+            }
           }
         }
       }
     }
-    console.log(`   ✅ All ${fixtures.length} fixtures passed strict league isolation, valid form data, official crest URLs, and bounded EV (<= 25%).`);
+    console.log(`   ✅ All ${fixtures.length} fixtures passed strict league isolation, valid 5-match form, official crests, and calibrated multi-market models (1X2, AH, Totals, BTTS <= 25% EV).`);
 
     console.log('\n🎉 All smoke tests passed successfully!');
   } catch (err) {

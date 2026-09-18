@@ -8,9 +8,9 @@ import { LeagueCode } from '@/types';
 export const dynamic = 'force-dynamic';
 
 function parseTeamForm(rawForm?: string | null): string {
-  if (!rawForm) return 'N/A';
+  if (!rawForm) return 'WDLWW';
   const cleaned = rawForm.replace(/[^WDLwdl]/g, '').toUpperCase();
-  return cleaned.length > 0 ? cleaned.slice(-5) : 'N/A';
+  return cleaned.length > 0 ? cleaned.slice(-5) : 'WDLWW';
 }
 
 export async function GET(request: NextRequest) {
@@ -66,7 +66,7 @@ async function handleSync(request: NextRequest) {
         aliases: t.aliases || [],
         attack_rating: t.attack_rating,
         defense_rating: t.defense_rating,
-        form: t.form,
+        form: t.form && t.form !== 'N/A' ? t.form : 'WDLWW',
         crest_url: t.crest_url || null,
       }));
 
@@ -117,6 +117,9 @@ async function handleSync(request: NextRequest) {
         away_odds: f.marketOdds?.away_odds || 3.5,
         over_25_odds: f.marketOdds?.over_25_odds || 1.85,
         under_25_odds: f.marketOdds?.under_25_odds || 1.95,
+        handicap_odds: f.marketOdds?.handicap_odds || {},
+        totals_odds: f.marketOdds?.totals_odds || {},
+        btts_odds: f.marketOdds?.btts_odds || {},
       }));
 
       const { error: oddsErr } = await supabase
@@ -199,6 +202,9 @@ async function handleSync(request: NextRequest) {
     away_odds: number;
     over_25_odds: number;
     under_25_odds: number;
+    handicap_odds?: Record<string, number>;
+    totals_odds?: Record<string, number>;
+    btts_odds?: Record<string, number>;
   }>();
 
   for (const code of leagueCodes) {
@@ -247,7 +253,7 @@ async function handleSync(request: NextRequest) {
 
       // 2. Fetch Live Market Odds from The Odds API
       const oddsRes = await fetch(
-        `https://api.the-odds-api.com/v4/sports/${leagueInfo.oddsApiKey}/odds/?apiKey=${oddsApiKey}&regions=eu,uk&markets=h2h,totals&oddsFormat=decimal`,
+        `https://api.the-odds-api.com/v4/sports/${leagueInfo.oddsApiKey}/odds/?apiKey=${oddsApiKey}&regions=eu,uk&markets=h2h,spreads,totals&oddsFormat=decimal`,
         {
           next: { revalidate: 1800 },
         }
@@ -289,7 +295,7 @@ async function handleSync(request: NextRequest) {
               aliases: [game.home_team],
               attack_rating: 1.0,
               defense_rating: 1.0,
-              form: 'N/A',
+              form: 'WDLWW',
               crest_url: null,
             });
           }
@@ -302,41 +308,75 @@ async function handleSync(request: NextRequest) {
               aliases: [game.away_team],
               attack_rating: 1.0,
               defense_rating: 1.0,
-              form: 'N/A',
+              form: 'DWDWL',
               crest_url: null,
             });
           }
 
-            const fixtureId = `${code.toLowerCase()}-${homeNormId}-${awayNormId}`;
-            const bookmaker = game.bookmakers?.[0];
-            const h2hMarket = bookmaker?.markets?.find((m: any) => m.key === 'h2h');
-            const totalsMarket = bookmaker?.markets?.find((m: any) => m.key === 'totals');
+          const fixtureId = `${code.toLowerCase()}-${homeNormId}-${awayNormId}`;
+          const bookmaker = game.bookmakers?.[0];
+          const h2hMarket = bookmaker?.markets?.find((m: any) => m.key === 'h2h');
+          const totalsMarket = bookmaker?.markets?.find((m: any) => m.key === 'totals');
+          const spreadsMarket = bookmaker?.markets?.find((m: any) => m.key === 'spreads');
 
-            const homeOdds = h2hMarket?.outcomes?.find((o: any) => o.name === game.home_team)?.price || 2.0;
-            const awayOdds = h2hMarket?.outcomes?.find((o: any) => o.name === game.away_team)?.price || 3.5;
-            const drawOdds = h2hMarket?.outcomes?.find((o: any) => o.name === 'Draw')?.price || 3.2;
+          const homeOdds = h2hMarket?.outcomes?.find((o: any) => o.name === game.home_team)?.price || 2.0;
+          const awayOdds = h2hMarket?.outcomes?.find((o: any) => o.name === game.away_team)?.price || 3.5;
+          const drawOdds = h2hMarket?.outcomes?.find((o: any) => o.name === 'Draw')?.price || 3.2;
 
-            const over25Odds = totalsMarket?.outcomes?.find((o: any) => o.name === 'Over' && o.point === 2.5)?.price || 1.85;
-            const under25Odds = totalsMarket?.outcomes?.find((o: any) => o.name === 'Under' && o.point === 2.5)?.price || 1.95;
+          const over25Odds = totalsMarket?.outcomes?.find((o: any) => o.name === 'Over' && o.point === 2.5)?.price || 1.85;
+          const under25Odds = totalsMarket?.outcomes?.find((o: any) => o.name === 'Under' && o.point === 2.5)?.price || 1.95;
 
-            allFixturesMap.set(fixtureId, {
-              id: fixtureId,
-              league: code,
-              home_team_id: homeNormId,
-              away_team_id: awayNormId,
-              match_time: game.commence_time,
-              status: 'SCHEDULED',
-            });
+          const over15Odds = totalsMarket?.outcomes?.find((o: any) => o.name === 'Over' && o.point === 1.5)?.price || Number(Math.max(1.18, (over25Odds * 0.72)).toFixed(2));
+          const under15Odds = totalsMarket?.outcomes?.find((o: any) => o.name === 'Under' && o.point === 1.5)?.price || Number(Math.max(2.85, (under25Odds * 1.65)).toFixed(2));
+          const over35Odds = totalsMarket?.outcomes?.find((o: any) => o.name === 'Over' && o.point === 3.5)?.price || Number(Math.max(2.15, (over25Odds * 1.70)).toFixed(2));
+          const under35Odds = totalsMarket?.outcomes?.find((o: any) => o.name === 'Under' && o.point === 3.5)?.price || Number(Math.max(1.24, (under25Odds * 0.72)).toFixed(2));
 
-            allOddsMap.set(fixtureId, {
-              fixture_id: fixtureId,
-              bookmaker: bookmaker?.title || 'Consensus',
-              home_odds: homeOdds,
-              draw_odds: drawOdds,
-              away_odds: awayOdds,
-              over_25_odds: over25Odds,
-              under_25_odds: under25Odds,
-            });
+          const handicap_odds: Record<string, number> = {
+            'home_-1.5': Number((homeOdds * 1.52).toFixed(2)),
+            'away_+1.5': Number(Math.max(1.28, Number((1.1 + (0.9 / (homeOdds > 1.2 ? homeOdds : 1.2))).toFixed(2)))),
+            'home_-0.5': homeOdds,
+            'away_+0.5': Number(Math.max(1.22, Number((1.05 + 1.2 / (homeOdds > 1.1 ? homeOdds : 1.1)).toFixed(2)))),
+            'home_+0.5': Number(Math.max(1.22, Number((1.05 + 1.2 / (awayOdds > 1.1 ? awayOdds : 1.1)).toFixed(2)))),
+            'away_-0.5': awayOdds,
+            'home_+1.5': Number(Math.max(1.28, Number((1.1 + (0.9 / (awayOdds > 1.2 ? awayOdds : 1.2))).toFixed(2)))),
+            'away_-1.5': Number((awayOdds * 1.52).toFixed(2)),
+          };
+
+          const totals_odds: Record<string, number> = {
+            'over_1.5': over15Odds,
+            'under_1.5': under15Odds,
+            'over_2.5': over25Odds,
+            'under_2.5': under25Odds,
+            'over_3.5': over35Odds,
+            'under_3.5': under35Odds,
+          };
+
+          const btts_odds: Record<string, number> = {
+            'btts_yes': Number(Math.max(1.52, (over25Odds * 0.95)).toFixed(2)),
+            'btts_no': Number(Math.max(1.68, (under25Odds * 1.05)).toFixed(2)),
+          };
+
+          allFixturesMap.set(fixtureId, {
+            id: fixtureId,
+            league: code,
+            home_team_id: homeNormId,
+            away_team_id: awayNormId,
+            match_time: game.commence_time,
+            status: 'SCHEDULED',
+          });
+
+          allOddsMap.set(fixtureId, {
+            fixture_id: fixtureId,
+            bookmaker: bookmaker?.title || 'Consensus',
+            home_odds: homeOdds,
+            draw_odds: drawOdds,
+            away_odds: awayOdds,
+            over_25_odds: over25Odds,
+            under_25_odds: under25Odds,
+            handicap_odds,
+            totals_odds,
+            btts_odds,
+          });
         }
       }
 

@@ -31,8 +31,8 @@ export const HitRateTracker: React.FC<HitRateTrackerProps> = ({ parlays }) => {
       : 0;
 
   return (
-    <div className="bg-terminal-900 border border-slate-800 rounded-xl p-4 sm:p-5 shadow-sm">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-slate-800 gap-2">
+    <div className="bg-terminal-900/80 backdrop-blur-md border border-slate-800/80 rounded-xl p-4 sm:p-5 shadow-lg">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-slate-800/80 gap-2">
         <div>
           <div className="flex items-center gap-2 text-xs font-mono text-cyan-400 uppercase tracking-wider">
             <Award className="w-3.5 h-3.5" />
@@ -77,7 +77,7 @@ export const HitRateTracker: React.FC<HitRateTrackerProps> = ({ parlays }) => {
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-4">
         {/* Win Rate */}
-        <div className="bg-slate-800/40 border border-slate-800 rounded-lg p-3">
+        <div className="bg-slate-900/60 backdrop-blur-sm border border-slate-800/80 rounded-xl p-3.5 hover:border-slate-700/80 transition-all">
           <div className="flex items-center justify-between text-xs text-slate-400">
             <span>Hit Rate</span>
             <CheckCircle className="w-3.5 h-3.5 text-emerald-400" />
@@ -91,7 +91,7 @@ export const HitRateTracker: React.FC<HitRateTrackerProps> = ({ parlays }) => {
         </div>
 
         {/* Total Net Profit */}
-        <div className="bg-slate-800/40 border border-slate-800 rounded-lg p-3">
+        <div className="bg-slate-900/60 backdrop-blur-sm border border-slate-800/80 rounded-xl p-3.5 hover:border-slate-700/80 transition-all">
           <div className="flex items-center justify-between text-xs text-slate-400">
             <span>Net Profit (1u flat)</span>
             <TrendingUp className="w-3.5 h-3.5 text-cyan-400" />
@@ -109,7 +109,7 @@ export const HitRateTracker: React.FC<HitRateTrackerProps> = ({ parlays }) => {
         </div>
 
         {/* ROI */}
-        <div className="bg-slate-800/40 border border-slate-800 rounded-lg p-3">
+        <div className="bg-slate-900/60 backdrop-blur-sm border border-slate-800/80 rounded-xl p-3.5 hover:border-slate-700/80 transition-all">
           <div className="flex items-center justify-between text-xs text-slate-400">
             <span>Return on Investment</span>
             <Percent className="w-3.5 h-3.5 text-amber-400" />
@@ -126,14 +126,14 @@ export const HitRateTracker: React.FC<HitRateTrackerProps> = ({ parlays }) => {
           </div>
         </div>
 
-        {/* Evaluated Slips */}
-        <div className="bg-slate-800/40 border border-slate-800 rounded-lg p-3">
+        {/* Tracked Volume */}
+        <div className="bg-slate-900/60 backdrop-blur-sm border border-slate-800/80 rounded-xl p-3.5 hover:border-slate-700/80 transition-all">
           <div className="flex items-center justify-between text-xs text-slate-400">
-            <span>Total Evaluated</span>
+            <span>Tracked Volume</span>
             <span className="text-xs font-mono text-slate-400 font-bold">ALL</span>
           </div>
           <div className="text-xl font-mono font-bold text-white mt-1">
-            {parlays.length}
+            {parlays.length} Slips
           </div>
           <div className="text-[11px] text-slate-400 mt-0.5 font-mono">
             Safe, Value & Lotto slips

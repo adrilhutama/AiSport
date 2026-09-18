@@ -66,6 +66,10 @@ test.describe('OddsMatrix End-to-End Suite', () => {
     await closeBtn.click();
     await expect(page.locator('text=Bivariate Poisson Quant Model')).not.toBeVisible();
 
+    // Switch to Goal Totals tab
+    const totalsTab = page.locator('button:has-text("Goal Totals")').first();
+    await totalsTab.click();
+
     // Add Over 2.5 selection
     const overOddsBtn = page.locator('button:has-text("Over 2.5")').first();
     await overOddsBtn.click();
@@ -127,6 +131,38 @@ test.describe('OddsMatrix End-to-End Suite', () => {
     // Verify decimal odds buttons exist and are formatted as decimals (e.g. 2.10, 1.85)
     const oddsButtons = page.locator('button:has-text("1"), button:has-text("X"), button:has-text("2")');
     expect(await oddsButtons.count()).toBeGreaterThan(0);
+  });
+
+  test('Multi-Market Expansion: Asian Handicap, Goal Totals, and BTTS Odds Chips', async ({ page }) => {
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
+
+    // Switch to Match Builder
+    const builderTab = page.locator('button:has-text("Match Builder")');
+    await builderTab.click();
+
+    // 1. Test Asian Handicap tab
+    const ahTab = page.locator('button:has-text("Asian Handicap")').first();
+    await expect(ahTab).toBeVisible();
+    await ahTab.click();
+
+    // Verify AH chips exist (e.g. Home -0.5, Away +0.5)
+    const ahChip = page.locator('button:has-text("Home -0.5")').first();
+    await expect(ahChip).toBeVisible();
+    await ahChip.click();
+
+    // Verify Betting Slip displays Asian Handicap selection
+    const bettingSlip = page.getByText('Betting Slip', { exact: true });
+    await expect(bettingSlip).toBeVisible();
+    await expect(page.locator('text=Asian Handicap').first()).toBeVisible();
+
+    // 2. Test BTTS tab
+    const bttsTab = page.locator('button:has-text("BTTS")').first();
+    await expect(bttsTab).toBeVisible();
+    await bttsTab.click();
+
+    // Verify BTTS chips exist
+    const bttsYesChip = page.locator('button:has-text("Yes")').first();
+    await expect(bttsYesChip).toBeVisible();
   });
 
   test('API Route: Background Sync returns valid JSON and updates records', async ({ request }) => {

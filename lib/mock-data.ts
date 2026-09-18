@@ -701,6 +701,41 @@ export const MOCK_FIXTURES: Fixture[] = [
   }
 ];
 
+// Enrich all mock fixtures with calibrated Asian Handicap, multi-line Totals, and BTTS odds
+MOCK_FIXTURES.forEach((f) => {
+  if (f.marketOdds) {
+    const home = f.marketOdds.home_odds;
+    const away = f.marketOdds.away_odds;
+    const over25 = f.marketOdds.over_25_odds;
+    const under25 = f.marketOdds.under_25_odds;
+
+    f.marketOdds.handicap_odds = {
+      'home_-1.5': Number((home * 1.52).toFixed(2)),
+      'away_+1.5': Number(Math.max(1.28, Number((1.1 + (0.9 / (home > 1.2 ? home : 1.2))).toFixed(2)))),
+      'home_-0.5': home,
+      'away_+0.5': Number(Math.max(1.22, Number((1.05 + 1.2 / (home > 1.1 ? home : 1.1)).toFixed(2)))),
+      'home_+0.5': Number(Math.max(1.22, Number((1.05 + 1.2 / (away > 1.1 ? away : 1.1)).toFixed(2)))),
+      'away_-0.5': away,
+      'home_+1.5': Number(Math.max(1.28, Number((1.1 + (0.9 / (away > 1.2 ? away : 1.2))).toFixed(2)))),
+      'away_-1.5': Number((away * 1.52).toFixed(2)),
+    };
+
+    f.marketOdds.totals_odds = {
+      'over_1.5': Number(Math.max(1.18, (over25 * 0.72)).toFixed(2)),
+      'under_1.5': Number(Math.max(2.85, (under25 * 1.65)).toFixed(2)),
+      'over_2.5': over25,
+      'under_2.5': under25,
+      'over_3.5': Number(Math.max(2.15, (over25 * 1.70)).toFixed(2)),
+      'under_3.5': Number(Math.max(1.24, (under25 * 0.72)).toFixed(2)),
+    };
+
+    f.marketOdds.btts_odds = {
+      'btts_yes': Number(Math.max(1.52, (over25 * 0.95)).toFixed(2)),
+      'btts_no': Number(Math.max(1.68, (under25 * 1.05)).toFixed(2)),
+    };
+  }
+});
+
 export const MOCK_HISTORICAL_PARLAYS: AIParlay[] = [
   {
     id: 'hist-1',

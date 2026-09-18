@@ -164,18 +164,25 @@ export const DashboardClient: React.FC<DashboardClientProps> = ({
   const totalValueBets = fixtures.reduce((acc, f) => {
     if (!f.quantAnalysis) return acc;
     const evs = f.quantAnalysis.expectedValues;
-    const positiveCount = [
+    const values = [
       evs.homeEV,
       evs.drawEV,
       evs.awayEV,
+      evs.over15EV,
+      evs.under15EV,
       evs.over25EV,
       evs.under25EV,
-    ].filter((v) => v > 0).length;
-    return acc + positiveCount;
+      evs.over35EV,
+      evs.under35EV,
+      evs.bttsYesEV,
+      evs.bttsNoEV,
+      ...Object.values(evs.asianHandicapEV || {}),
+    ];
+    return acc + values.filter((v) => v > 0).length;
   }, 0);
 
   return (
-    <div className="min-h-screen bg-terminal-950 flex flex-col text-slate-100 selection:bg-cyan-500/30 selection:text-cyan-200">
+    <div className="min-h-screen bg-terminal-950 text-slate-100 flex flex-col font-sans selection:bg-cyan-500/30 selection:text-cyan-200">
       {/* Toast Notification */}
       {syncToast && (
         <div className="fixed top-16 left-1/2 -translate-x-1/2 z-50 bg-emerald-950/90 border border-emerald-500 text-emerald-200 px-4 py-2 rounded-xl text-xs font-mono font-semibold shadow-xl backdrop-blur-md animate-in fade-in slide-in-from-top duration-200 flex items-center gap-2">
@@ -191,6 +198,8 @@ export const DashboardClient: React.FC<DashboardClientProps> = ({
         lastSyncTime={lastSyncTime}
         onSync={handleSync}
         isSyncing={isSyncing}
+        totalValueBets={totalValueBets}
+        dataSource={dataSource}
       />
 
       {/* Hero / Terminal Intro Banner */}

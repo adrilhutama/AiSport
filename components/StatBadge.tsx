@@ -29,16 +29,16 @@ export const FormBadges: React.FC<FormBadgesProps> = ({ form }) => {
       {letters.map((res, idx) => {
         let bg = 'bg-slate-800 text-slate-400 border-slate-700';
         if (res === 'W') {
-          bg = 'bg-emerald-950/80 text-emerald-400 border-emerald-700/60';
+          bg = 'bg-emerald-500/20 text-emerald-400 border-emerald-500/50 shadow-xs shadow-emerald-950/50';
         } else if (res === 'D') {
-          bg = 'bg-amber-950/80 text-amber-400 border-amber-700/60';
+          bg = 'bg-amber-500/20 text-amber-400 border-amber-500/50 shadow-xs shadow-amber-950/50';
         } else if (res === 'L') {
-          bg = 'bg-rose-950/80 text-rose-400 border-rose-700/60';
+          bg = 'bg-rose-500/20 text-rose-400 border-rose-500/50 shadow-xs shadow-rose-950/50';
         }
         return (
           <span
             key={idx}
-            className={`w-4 h-4 rounded text-[10px] font-mono font-bold flex items-center justify-center border ${bg}`}
+            className={`w-5 h-5 rounded-full text-[10px] font-mono font-extrabold flex items-center justify-center border ${bg}`}
           >
             {res}
           </span>

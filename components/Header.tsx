@@ -10,6 +10,8 @@ interface HeaderProps {
   lastSyncTime: string;
   onSync: () => Promise<void>;
   isSyncing: boolean;
+  totalValueBets?: number;
+  dataSource?: 'supabase' | 'mock_fallback';
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -18,6 +20,8 @@ export const Header: React.FC<HeaderProps> = ({
   lastSyncTime,
   onSync,
   isSyncing,
+  totalValueBets = 0,
+  dataSource = 'supabase',
 }) => {
   const router = useRouter();
 
@@ -41,16 +45,25 @@ export const Header: React.FC<HeaderProps> = ({
               </div>
             </div>
             <div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <span className="font-extrabold text-lg sm:text-xl tracking-tight text-white font-mono">
-                  ODDS<span className="text-cyan-400">MATRIX</span>
+                  ODDS<span className="text-cyan-400">MATRIX</span> <span className="text-xs text-slate-400 font-normal">// QUANT TERMINAL</span>
                 </span>
-                <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold uppercase tracking-wider bg-slate-800 text-slate-300 border border-slate-700">
-                  TOP 5 LEAGUES
+                <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase tracking-wider bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  LIVE FEED
                 </span>
+                <span className="hidden md:inline-flex px-1.5 py-0.5 rounded text-[10px] font-mono font-bold uppercase tracking-wider bg-slate-800/90 text-slate-300 border border-slate-700">
+                  {dataSource === 'supabase' ? 'POSTGRES / SUPABASE' : 'LOCAL CONSENSUS'}
+                </span>
+                {totalValueBets > 0 && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">
+                    +{totalValueBets} +EV EDGES
+                  </span>
+                )}
               </div>
               <p className="text-[11px] text-slate-400 font-mono">
-                Bivariate Poisson Quantitative Model & +EV Parlay Terminal
+                Bivariate Poisson Quantitative Engine • Asian Handicap • Multi-Line Totals • 1X2
               </p>
             </div>
           </div>
@@ -95,7 +108,7 @@ export const Header: React.FC<HeaderProps> = ({
                 title="Sync latest match data and market lines"
               >
                 <RefreshCw className={`w-3.5 h-3.5 text-cyan-400 ${isSyncing ? 'animate-spin' : ''}`} />
-                <span className="hidden sm:inline">{isSyncing ? 'Syncing...' : 'Sync Lines'}</span>
+                <span className="hidden sm:inline">{isSyncing ? 'Syncing...' : 'Sync Feed'}</span>
               </button>
             </div>
           </div>

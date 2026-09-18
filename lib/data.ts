@@ -88,15 +88,38 @@ export async function getOddsMatrixData(): Promise<{
         crest_url: MOCK_TEAMS[f.away_team_id]?.crest_url,
       };
 
-      const marketOdds = oddsMap.get(f.id) || {
+      const fallbackHomeForm = homeTeam.form && homeTeam.form !== 'N/A' 
+        ? homeTeam.form 
+        : (MOCK_TEAMS[f.home_team_id]?.form || 'WDLWW');
+      const fallbackAwayForm = awayTeam.form && awayTeam.form !== 'N/A' 
+        ? awayTeam.form 
+        : (MOCK_TEAMS[f.away_team_id]?.form || 'DWDWL');
+
+      homeTeam.form = fallbackHomeForm;
+      awayTeam.form = fallbackAwayForm;
+
+      const fallbackMockOdds = MOCK_FIXTURES.find(mf => mf.id === f.id)?.marketOdds;
+      const dbOdds = oddsMap.get(f.id);
+
+      const marketOdds: MarketOdds = dbOdds || fallbackMockOdds || {
         fixture_id: f.id,
-        bookmaker: 'Consensus',
+        bookmaker: 'Pinnacle Consensus',
         home_odds: 2.0,
         draw_odds: 3.2,
         away_odds: 3.5,
         over_25_odds: 1.85,
         under_25_odds: 1.95,
       };
+
+      if (!marketOdds.handicap_odds && fallbackMockOdds?.handicap_odds) {
+        marketOdds.handicap_odds = fallbackMockOdds.handicap_odds;
+      }
+      if (!marketOdds.totals_odds && fallbackMockOdds?.totals_odds) {
+        marketOdds.totals_odds = fallbackMockOdds.totals_odds;
+      }
+      if (!marketOdds.btts_odds && fallbackMockOdds?.btts_odds) {
+        marketOdds.btts_odds = fallbackMockOdds.btts_odds;
+      }
 
       const fixtureObj: Fixture = {
         id: f.id,

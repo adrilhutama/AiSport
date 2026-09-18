@@ -141,10 +141,11 @@ export const BettingSlip: React.FC<BettingSlipProps> = ({
                     <TeamCrest src={leg.awayCrest} name={leg.awayTeam} size="xs" />
                     <span>{leg.awayTeam}</span>
                   </div>
-                  <div className="flex items-center gap-2 text-[11px] font-mono text-slate-400">
-                    <span>
-                      {leg.market}: <strong className="text-cyan-300">{leg.selection}</strong>
+                  <div className="flex items-center gap-1.5 flex-wrap text-[11px] font-mono text-slate-400">
+                    <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-slate-800 text-slate-300 border border-slate-700">
+                      {leg.market}
                     </span>
+                    <strong className="text-cyan-300">{leg.selection}</strong>
                     {leg.ev > 0 && <EVBadge ev={leg.ev} />}
                   </div>
                 </div>

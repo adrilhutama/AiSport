@@ -39,6 +39,9 @@ CREATE TABLE IF NOT EXISTS public.market_odds (
     away_odds NUMERIC(6,2) NOT NULL,           -- 1X2 Away Win decimal odds (e.g. 4.20)
     over_25_odds NUMERIC(6,2) NOT NULL,        -- Over 2.5 goals decimal odds (e.g. 1.72)
     under_25_odds NUMERIC(6,2) NOT NULL,       -- Under 2.5 goals decimal odds (e.g. 2.10)
+    handicap_odds JSONB DEFAULT '{}',          -- Asian Handicap lines (e.g. {"home_-1.5": 2.60, "away_+1.5": 1.50})
+    totals_odds JSONB DEFAULT '{}',            -- Alternate totals (e.g. {"over_1.5": 1.25, "under_1.5": 3.90})
+    btts_odds JSONB DEFAULT '{}',              -- Both Teams to Score (e.g. {"btts_yes": 1.75, "btts_no": 2.05})
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 

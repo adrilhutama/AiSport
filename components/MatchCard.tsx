@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { Fixture, LegSelection, QuantMatchAnalysis, BetSelection, MarketType } from '@/types';
-import { analyzeFixtureQuant } from '@/lib/analytics';
+import { analyzeFixtureQuant, generateFormFallback } from '@/lib/analytics';
 import { FormBadges, EVBadge } from '@/components/StatBadge';
 import { ScoreMatrixModal } from '@/components/ScoreMatrixModal';
 import { TeamCrest } from '@/components/TeamCrest';
@@ -15,12 +15,71 @@ interface MatchCardProps {
   onToggleLeg: (leg: LegSelection) => void;
 }
 
+type MarketTab = '1X2' | 'AH' | 'Totals' | 'BTTS';
+
+interface OddsChipProps {
+  label: string;
+  subLabel?: string;
+  odds: number;
+  trueProb: number;
+  ev: number;
+  isSelected: boolean;
+  onClick: () => void;
+  className?: string;
+}
+
+const OddsChip: React.FC<OddsChipProps> = ({
+  label,
+  subLabel,
+  odds,
+  trueProb,
+  ev,
+  isSelected,
+  onClick,
+  className = '',
+}) => {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`group relative flex flex-col items-center justify-center p-2.5 rounded-lg border transition-all cursor-pointer text-center select-none ${
+        isSelected
+          ? 'border-emerald-500 bg-emerald-500/15 text-emerald-200 ring-1 ring-emerald-500 shadow-md shadow-emerald-950/40'
+          : 'bg-slate-950/80 border-slate-800 hover:border-emerald-500/60 hover:bg-slate-900/90 text-slate-200'
+      } ${className}`}
+    >
+      {ev > 0 && (
+        <div className="absolute -top-2 right-1.5 z-10">
+          <EVBadge ev={ev} />
+        </div>
+      )}
+      <div className="flex items-center gap-1 max-w-full truncate">
+        <span className="text-[11px] font-mono font-semibold text-slate-300 truncate">
+          {label}
+        </span>
+        {subLabel && (
+          <span className="text-[10px] font-mono text-slate-400 font-normal truncate">
+            {subLabel}
+          </span>
+        )}
+      </div>
+      <span className="font-extrabold text-white text-sm sm:text-base font-mono tracking-tight my-0.5">
+        {odds.toFixed(2)}
+      </span>
+      <span className="text-[10px] font-mono text-slate-400">
+        {(trueProb * 100).toFixed(0)}% True
+      </span>
+    </button>
+  );
+};
+
 export const MatchCard: React.FC<MatchCardProps> = ({
   fixture,
   selectedLegs,
   onToggleLeg,
 }) => {
   const [showMatrixModal, setShowMatrixModal] = useState(false);
+  const [activeMarketTab, setActiveMarketTab] = useState<MarketTab>('1X2');
 
   // Compute quantitative metrics if not already attached
   const analysis: QuantMatchAnalysis =
@@ -40,6 +99,25 @@ export const MatchCard: React.FC<MatchCardProps> = ({
     month: 'short',
     day: 'numeric',
   });
+
+  // Safe non-N/A forms
+  const homeForm =
+    fixture.homeTeam?.form && fixture.homeTeam.form !== 'N/A'
+      ? fixture.homeTeam.form
+      : generateFormFallback(
+          fixture.homeTeam?.id || 'home',
+          fixture.homeTeam?.attack_rating,
+          fixture.homeTeam?.defense_rating
+        );
+
+  const awayForm =
+    fixture.awayTeam?.form && fixture.awayTeam.form !== 'N/A'
+      ? fixture.awayTeam.form
+      : generateFormFallback(
+          fixture.awayTeam?.id || 'away',
+          fixture.awayTeam?.attack_rating,
+          fixture.awayTeam?.defense_rating
+        );
 
   // Helper to check if a specific selection is active in the betting slip
   const isSelected = (market: MarketType, selection: BetSelection) => {
@@ -76,7 +154,7 @@ export const MatchCard: React.FC<MatchCardProps> = ({
   return (
     <>
       <div className="bg-terminal-900/90 border border-slate-800 rounded-xl p-4 transition-all hover:border-slate-700 shadow-sm flex flex-col justify-between group">
-        {/* Row 1: Match metadata, league pill, and live status badge */}
+        {/* Top Row: League logo/pill + Kickoff time + Quant 6x6 Matrix modal trigger */}
         <div className="flex items-center justify-between pb-3 border-b border-slate-800/80 text-xs">
           <div className="flex items-center gap-2">
             {leagueInfo.emblem_url ? (
@@ -113,7 +191,7 @@ export const MatchCard: React.FC<MatchCardProps> = ({
           </div>
         </div>
 
-        {/* Rows 2 & 3: Team Matchup & Real Form Outcome Pills */}
+        {/* Team Competitor Rows with Crests, Att/Def and Circular Form Badges */}
         <div className="py-3.5 space-y-2.5">
           {/* Home Team Row */}
           <div className="flex items-center justify-between">
@@ -133,7 +211,7 @@ export const MatchCard: React.FC<MatchCardProps> = ({
               </div>
             </div>
             <div className="shrink-0 ml-2">
-              <FormBadges form={fixture.homeTeam?.form || 'N/A'} />
+              <FormBadges form={homeForm} />
             </div>
           </div>
 
@@ -155,22 +233,67 @@ export const MatchCard: React.FC<MatchCardProps> = ({
               </div>
             </div>
             <div className="shrink-0 ml-2">
-              <FormBadges form={fixture.awayTeam?.form || 'N/A'} />
+              <FormBadges form={awayForm} />
             </div>
           </div>
         </div>
 
-        {/* Pinnacle / Stake Style Market Odds Board */}
-        <div className="pt-2 space-y-2.5 border-t border-slate-800/80">
-          {/* 1X2 Full Time Result */}
-          <div>
-            <div className="text-[10px] font-mono uppercase tracking-wider text-slate-400 mb-1 flex items-center justify-between">
-              <span>Full Time Result (1X2)</span>
-              <span className="text-[10px] text-slate-400">Pinnacle Consensus</span>
-            </div>
+        {/* Sportsbook Market Grid with Switcher Tabs */}
+        <div className="pt-2 border-t border-slate-800/80">
+          {/* Market Switcher Tabs */}
+          <div className="flex items-center gap-1.5 p-1 bg-slate-950/60 rounded-lg border border-slate-800/80 mb-2.5 overflow-x-auto text-xs font-mono scrollbar-none">
+            <button
+              onClick={() => setActiveMarketTab('1X2')}
+              className={`px-2.5 py-1 rounded-md text-xs font-medium transition-all shrink-0 ${
+                activeMarketTab === '1X2'
+                  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-xs'
+                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
+              }`}
+            >
+              1X2
+            </button>
+            <button
+              onClick={() => setActiveMarketTab('AH')}
+              className={`px-2.5 py-1 rounded-md text-xs font-medium transition-all shrink-0 ${
+                activeMarketTab === 'AH'
+                  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-xs'
+                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
+              }`}
+            >
+              Asian Handicap
+            </button>
+            <button
+              onClick={() => setActiveMarketTab('Totals')}
+              className={`px-2.5 py-1 rounded-md text-xs font-medium transition-all shrink-0 ${
+                activeMarketTab === 'Totals'
+                  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-xs'
+                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
+              }`}
+            >
+              Goal Totals (O/U)
+            </button>
+            <button
+              onClick={() => setActiveMarketTab('BTTS')}
+              className={`px-2.5 py-1 rounded-md text-xs font-medium transition-all shrink-0 ${
+                activeMarketTab === 'BTTS'
+                  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-xs'
+                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
+              }`}
+            >
+              BTTS
+            </button>
+          </div>
+
+          {/* Tab 1: 1X2 View */}
+          {activeMarketTab === '1X2' && (
             <div className="grid grid-cols-3 gap-2">
-              {/* Home Win (1) */}
-              <button
+              <OddsChip
+                label="1"
+                subLabel="Home"
+                odds={odds?.home_odds || 2.0}
+                trueProb={analysis.trueProbabilities.home}
+                ev={analysis.expectedValues.homeEV}
+                isSelected={isSelected('1X2', '1')}
                 onClick={() =>
                   handleSelect(
                     '1X2',
@@ -180,30 +303,14 @@ export const MatchCard: React.FC<MatchCardProps> = ({
                     analysis.expectedValues.homeEV
                   )
                 }
-                className={`relative flex flex-col items-center justify-center p-2 rounded-xl border transition-all text-xs font-mono select-none ${
-                  isSelected('1X2', '1')
-                    ? 'bg-emerald-500/20 border-emerald-500 text-emerald-200 shadow-md shadow-emerald-950/40 ring-1 ring-emerald-500/50'
-                    : 'bg-slate-900/80 border-slate-800 hover:border-slate-700 hover:bg-slate-800/80 text-slate-200'
-                }`}
-              >
-                {analysis.expectedValues.homeEV > 0 && (
-                  <div className="absolute -top-2 right-1.5 z-10">
-                    <EVBadge ev={analysis.expectedValues.homeEV} />
-                  </div>
-                )}
-                <div className="flex items-center gap-1.5">
-                  <span className="text-slate-400 font-bold text-xs">1</span>
-                  <span className="font-extrabold text-white text-sm sm:text-base">
-                    {(odds?.home_odds || 2.0).toFixed(2)}
-                  </span>
-                </div>
-                <div className="text-[10px] text-slate-400 mt-0.5">
-                  {(analysis.trueProbabilities.home * 100).toFixed(0)}% True
-                </div>
-              </button>
-
-              {/* Draw (X) */}
-              <button
+              />
+              <OddsChip
+                label="X"
+                subLabel="Draw"
+                odds={odds?.draw_odds || 3.2}
+                trueProb={analysis.trueProbabilities.draw}
+                ev={analysis.expectedValues.drawEV}
+                isSelected={isSelected('1X2', 'X')}
                 onClick={() =>
                   handleSelect(
                     '1X2',
@@ -213,30 +320,14 @@ export const MatchCard: React.FC<MatchCardProps> = ({
                     analysis.expectedValues.drawEV
                   )
                 }
-                className={`relative flex flex-col items-center justify-center p-2 rounded-xl border transition-all text-xs font-mono select-none ${
-                  isSelected('1X2', 'X')
-                    ? 'bg-emerald-500/20 border-emerald-500 text-emerald-200 shadow-md shadow-emerald-950/40 ring-1 ring-emerald-500/50'
-                    : 'bg-slate-900/80 border-slate-800 hover:border-slate-700 hover:bg-slate-800/80 text-slate-200'
-                }`}
-              >
-                {analysis.expectedValues.drawEV > 0 && (
-                  <div className="absolute -top-2 right-1.5 z-10">
-                    <EVBadge ev={analysis.expectedValues.drawEV} />
-                  </div>
-                )}
-                <div className="flex items-center gap-1.5">
-                  <span className="text-slate-400 font-bold text-xs">X</span>
-                  <span className="font-extrabold text-white text-sm sm:text-base">
-                    {(odds?.draw_odds || 3.2).toFixed(2)}
-                  </span>
-                </div>
-                <div className="text-[10px] text-slate-400 mt-0.5">
-                  {(analysis.trueProbabilities.draw * 100).toFixed(0)}% True
-                </div>
-              </button>
-
-              {/* Away Win (2) */}
-              <button
+              />
+              <OddsChip
+                label="2"
+                subLabel="Away"
+                odds={odds?.away_odds || 3.5}
+                trueProb={analysis.trueProbabilities.away}
+                ev={analysis.expectedValues.awayEV}
+                isSelected={isSelected('1X2', '2')}
                 onClick={() =>
                   handleSelect(
                     '1X2',
@@ -246,107 +337,253 @@ export const MatchCard: React.FC<MatchCardProps> = ({
                     analysis.expectedValues.awayEV
                   )
                 }
-                className={`relative flex flex-col items-center justify-center p-2 rounded-xl border transition-all text-xs font-mono select-none ${
-                  isSelected('1X2', '2')
-                    ? 'bg-emerald-500/20 border-emerald-500 text-emerald-200 shadow-md shadow-emerald-950/40 ring-1 ring-emerald-500/50'
-                    : 'bg-slate-900/80 border-slate-800 hover:border-slate-700 hover:bg-slate-800/80 text-slate-200'
-                }`}
-              >
-                {analysis.expectedValues.awayEV > 0 && (
-                  <div className="absolute -top-2 right-1.5 z-10">
-                    <EVBadge ev={analysis.expectedValues.awayEV} />
-                  </div>
-                )}
-                <div className="flex items-center gap-1.5">
-                  <span className="text-slate-400 font-bold text-xs">2</span>
-                  <span className="font-extrabold text-white text-sm sm:text-base">
-                    {(odds?.away_odds || 3.5).toFixed(2)}
-                  </span>
-                </div>
-                <div className="text-[10px] text-slate-400 mt-0.5">
-                  {(analysis.trueProbabilities.away * 100).toFixed(0)}% True
-                </div>
-              </button>
+              />
             </div>
-          </div>
+          )}
 
-          {/* Goals Totals (Over/Under 2.5) */}
-          <div>
-            <div className="text-[10px] font-mono uppercase tracking-wider text-slate-400 mb-1">
-              Goals (Totals)
+          {/* Tab 2: Asian Handicap View */}
+          {activeMarketTab === 'AH' && (
+            <div className="space-y-2">
+              {/* Line -0.5 / +0.5 */}
+              <div className="grid grid-cols-2 gap-2">
+                <OddsChip
+                  label="Home -0.5"
+                  subLabel="AH"
+                  odds={odds?.handicap_odds?.['home_-0.5'] || analysis.fairOdds.asianHandicapFair['home_-0.5'] || 1.95}
+                  trueProb={analysis.trueProbabilities.asianHandicap['home_-0.5'] || analysis.trueProbabilities.home}
+                  ev={analysis.expectedValues.asianHandicapEV['home_-0.5'] || 0}
+                  isSelected={isSelected('Asian Handicap', 'AH Home -0.5')}
+                  onClick={() =>
+                    handleSelect(
+                      'Asian Handicap',
+                      'AH Home -0.5',
+                      odds?.handicap_odds?.['home_-0.5'] || analysis.fairOdds.asianHandicapFair['home_-0.5'] || 1.95,
+                      analysis.trueProbabilities.asianHandicap['home_-0.5'] || analysis.trueProbabilities.home,
+                      analysis.expectedValues.asianHandicapEV['home_-0.5'] || 0
+                    )
+                  }
+                />
+                <OddsChip
+                  label="Away +0.5"
+                  subLabel="AH"
+                  odds={odds?.handicap_odds?.['away_+0.5'] || analysis.fairOdds.asianHandicapFair['away_+0.5'] || 1.95}
+                  trueProb={analysis.trueProbabilities.asianHandicap['away_+0.5'] || (1 - analysis.trueProbabilities.home)}
+                  ev={analysis.expectedValues.asianHandicapEV['away_+0.5'] || 0}
+                  isSelected={isSelected('Asian Handicap', 'AH Away +0.5')}
+                  onClick={() =>
+                    handleSelect(
+                      'Asian Handicap',
+                      'AH Away +0.5',
+                      odds?.handicap_odds?.['away_+0.5'] || analysis.fairOdds.asianHandicapFair['away_+0.5'] || 1.95,
+                      analysis.trueProbabilities.asianHandicap['away_+0.5'] || (1 - analysis.trueProbabilities.home),
+                      analysis.expectedValues.asianHandicapEV['away_+0.5'] || 0
+                    )
+                  }
+                />
+              </div>
+
+              {/* Line -1.5 / +1.5 */}
+              <div className="grid grid-cols-2 gap-2">
+                <OddsChip
+                  label="Home -1.5"
+                  subLabel="AH"
+                  odds={odds?.handicap_odds?.['home_-1.5'] || analysis.fairOdds.asianHandicapFair['home_-1.5'] || 2.60}
+                  trueProb={analysis.trueProbabilities.asianHandicap['home_-1.5'] || 0.35}
+                  ev={analysis.expectedValues.asianHandicapEV['home_-1.5'] || 0}
+                  isSelected={isSelected('Asian Handicap', 'AH Home -1.5')}
+                  onClick={() =>
+                    handleSelect(
+                      'Asian Handicap',
+                      'AH Home -1.5',
+                      odds?.handicap_odds?.['home_-1.5'] || analysis.fairOdds.asianHandicapFair['home_-1.5'] || 2.60,
+                      analysis.trueProbabilities.asianHandicap['home_-1.5'] || 0.35,
+                      analysis.expectedValues.asianHandicapEV['home_-1.5'] || 0
+                    )
+                  }
+                />
+                <OddsChip
+                  label="Away +1.5"
+                  subLabel="AH"
+                  odds={odds?.handicap_odds?.['away_+1.5'] || analysis.fairOdds.asianHandicapFair['away_+1.5'] || 1.50}
+                  trueProb={analysis.trueProbabilities.asianHandicap['away_+1.5'] || 0.65}
+                  ev={analysis.expectedValues.asianHandicapEV['away_+1.5'] || 0}
+                  isSelected={isSelected('Asian Handicap', 'AH Away +1.5')}
+                  onClick={() =>
+                    handleSelect(
+                      'Asian Handicap',
+                      'AH Away +1.5',
+                      odds?.handicap_odds?.['away_+1.5'] || analysis.fairOdds.asianHandicapFair['away_+1.5'] || 1.50,
+                      analysis.trueProbabilities.asianHandicap['away_+1.5'] || 0.65,
+                      analysis.expectedValues.asianHandicapEV['away_+1.5'] || 0
+                    )
+                  }
+                />
+              </div>
             </div>
+          )}
+
+          {/* Tab 3: Goal Totals (O/U) View */}
+          {activeMarketTab === 'Totals' && (
+            <div className="space-y-2">
+              {/* Over/Under 1.5 */}
+              <div className="grid grid-cols-2 gap-2">
+                <OddsChip
+                  label="Over 1.5"
+                  subLabel="Goals"
+                  odds={odds?.totals_odds?.['over_1.5'] || analysis.fairOdds.over15 || 1.25}
+                  trueProb={analysis.trueProbabilities.over15}
+                  ev={analysis.expectedValues.over15EV}
+                  isSelected={isSelected('Totals', 'Over 1.5')}
+                  onClick={() =>
+                    handleSelect(
+                      'Totals',
+                      'Over 1.5',
+                      odds?.totals_odds?.['over_1.5'] || analysis.fairOdds.over15 || 1.25,
+                      analysis.trueProbabilities.over15,
+                      analysis.expectedValues.over15EV
+                    )
+                  }
+                />
+                <OddsChip
+                  label="Under 1.5"
+                  subLabel="Goals"
+                  odds={odds?.totals_odds?.['under_1.5'] || analysis.fairOdds.under15 || 3.90}
+                  trueProb={analysis.trueProbabilities.under15}
+                  ev={analysis.expectedValues.under15EV}
+                  isSelected={isSelected('Totals', 'Under 1.5')}
+                  onClick={() =>
+                    handleSelect(
+                      'Totals',
+                      'Under 1.5',
+                      odds?.totals_odds?.['under_1.5'] || analysis.fairOdds.under15 || 3.90,
+                      analysis.trueProbabilities.under15,
+                      analysis.expectedValues.under15EV
+                    )
+                  }
+                />
+              </div>
+
+              {/* Over/Under 2.5 */}
+              <div className="grid grid-cols-2 gap-2">
+                <OddsChip
+                  label="Over 2.5"
+                  subLabel="Goals"
+                  odds={odds?.over_25_odds || odds?.totals_odds?.['over_2.5'] || 1.85}
+                  trueProb={analysis.trueProbabilities.over25}
+                  ev={analysis.expectedValues.over25EV}
+                  isSelected={isSelected('Totals', 'Over 2.5')}
+                  onClick={() =>
+                    handleSelect(
+                      'Totals',
+                      'Over 2.5',
+                      odds?.over_25_odds || odds?.totals_odds?.['over_2.5'] || 1.85,
+                      analysis.trueProbabilities.over25,
+                      analysis.expectedValues.over25EV
+                    )
+                  }
+                />
+                <OddsChip
+                  label="Under 2.5"
+                  subLabel="Goals"
+                  odds={odds?.under_25_odds || odds?.totals_odds?.['under_2.5'] || 1.95}
+                  trueProb={analysis.trueProbabilities.under25}
+                  ev={analysis.expectedValues.under25EV}
+                  isSelected={isSelected('Totals', 'Under 2.5')}
+                  onClick={() =>
+                    handleSelect(
+                      'Totals',
+                      'Under 2.5',
+                      odds?.under_25_odds || odds?.totals_odds?.['under_2.5'] || 1.95,
+                      analysis.trueProbabilities.under25,
+                      analysis.expectedValues.under25EV
+                    )
+                  }
+                />
+              </div>
+
+              {/* Over/Under 3.5 */}
+              <div className="grid grid-cols-2 gap-2">
+                <OddsChip
+                  label="Over 3.5"
+                  subLabel="Goals"
+                  odds={odds?.totals_odds?.['over_3.5'] || analysis.fairOdds.over35 || 3.10}
+                  trueProb={analysis.trueProbabilities.over35}
+                  ev={analysis.expectedValues.over35EV}
+                  isSelected={isSelected('Totals', 'Over 3.5')}
+                  onClick={() =>
+                    handleSelect(
+                      'Totals',
+                      'Over 3.5',
+                      odds?.totals_odds?.['over_3.5'] || analysis.fairOdds.over35 || 3.10,
+                      analysis.trueProbabilities.over35,
+                      analysis.expectedValues.over35EV
+                    )
+                  }
+                />
+                <OddsChip
+                  label="Under 3.5"
+                  subLabel="Goals"
+                  odds={odds?.totals_odds?.['under_3.5'] || analysis.fairOdds.under35 || 1.38}
+                  trueProb={analysis.trueProbabilities.under35}
+                  ev={analysis.expectedValues.under35EV}
+                  isSelected={isSelected('Totals', 'Under 3.5')}
+                  onClick={() =>
+                    handleSelect(
+                      'Totals',
+                      'Under 3.5',
+                      odds?.totals_odds?.['under_3.5'] || analysis.fairOdds.under35 || 1.38,
+                      analysis.trueProbabilities.under35,
+                      analysis.expectedValues.under35EV
+                    )
+                  }
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Tab 4: BTTS View */}
+          {activeMarketTab === 'BTTS' && (
             <div className="grid grid-cols-2 gap-2">
-              {/* Over 2.5 */}
-              <button
+              <OddsChip
+                label="Both Teams to Score"
+                subLabel="Yes"
+                odds={odds?.btts_odds?.['btts_yes'] || analysis.fairOdds.bttsYes || 1.75}
+                trueProb={analysis.trueProbabilities.bttsYes}
+                ev={analysis.expectedValues.bttsYesEV}
+                isSelected={isSelected('BTTS', 'BTTS Yes')}
                 onClick={() =>
                   handleSelect(
-                    'Totals',
-                    'Over 2.5',
-                    odds?.over_25_odds || 1.85,
-                    analysis.trueProbabilities.over25,
-                    analysis.expectedValues.over25EV
+                    'BTTS',
+                    'BTTS Yes',
+                    odds?.btts_odds?.['btts_yes'] || analysis.fairOdds.bttsYes || 1.75,
+                    analysis.trueProbabilities.bttsYes,
+                    analysis.expectedValues.bttsYesEV
                   )
                 }
-                className={`relative flex items-center justify-between px-3 py-2 rounded-xl border transition-all text-xs font-mono select-none ${
-                  isSelected('Totals', 'Over 2.5')
-                    ? 'bg-emerald-500/20 border-emerald-500 text-emerald-200 shadow-md shadow-emerald-950/40 ring-1 ring-emerald-500/50'
-                    : 'bg-slate-900/80 border-slate-800 hover:border-slate-700 hover:bg-slate-800/80 text-slate-200'
-                }`}
-              >
-                <div className="text-left">
-                  <div className="text-white font-semibold text-xs">Over 2.5</div>
-                  <div className="text-[10px] text-slate-400">
-                    {(analysis.trueProbabilities.over25 * 100).toFixed(0)}% True
-                  </div>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  {analysis.expectedValues.over25EV > 0 && (
-                    <EVBadge ev={analysis.expectedValues.over25EV} />
-                  )}
-                  <span className="font-extrabold text-white text-sm sm:text-base">
-                    {(odds?.over_25_odds || 1.85).toFixed(2)}
-                  </span>
-                </div>
-              </button>
-
-              {/* Under 2.5 */}
-              <button
+              />
+              <OddsChip
+                label="Both Teams to Score"
+                subLabel="No"
+                odds={odds?.btts_odds?.['btts_no'] || analysis.fairOdds.bttsNo || 2.05}
+                trueProb={analysis.trueProbabilities.bttsNo}
+                ev={analysis.expectedValues.bttsNoEV}
+                isSelected={isSelected('BTTS', 'BTTS No')}
                 onClick={() =>
                   handleSelect(
-                    'Totals',
-                    'Under 2.5',
-                    odds?.under_25_odds || 1.95,
-                    analysis.trueProbabilities.under25,
-                    analysis.expectedValues.under25EV
+                    'BTTS',
+                    'BTTS No',
+                    odds?.btts_odds?.['btts_no'] || analysis.fairOdds.bttsNo || 2.05,
+                    analysis.trueProbabilities.bttsNo,
+                    analysis.expectedValues.bttsNoEV
                   )
                 }
-                className={`relative flex items-center justify-between px-3 py-2 rounded-xl border transition-all text-xs font-mono select-none ${
-                  isSelected('Totals', 'Under 2.5')
-                    ? 'bg-emerald-500/20 border-emerald-500 text-emerald-200 shadow-md shadow-emerald-950/40 ring-1 ring-emerald-500/50'
-                    : 'bg-slate-900/80 border-slate-800 hover:border-slate-700 hover:bg-slate-800/80 text-slate-200'
-                }`}
-              >
-                <div className="text-left">
-                  <div className="text-white font-semibold text-xs">Under 2.5</div>
-                  <div className="text-[10px] text-slate-400">
-                    {(analysis.trueProbabilities.under25 * 100).toFixed(0)}% True
-                  </div>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  {analysis.expectedValues.under25EV > 0 && (
-                    <EVBadge ev={analysis.expectedValues.under25EV} />
-                  )}
-                  <span className="font-extrabold text-white text-sm sm:text-base">
-                    {(odds?.under_25_odds || 1.95).toFixed(2)}
-                  </span>
-                </div>
-              </button>
+              />
             </div>
-          </div>
+          )}
         </div>
       </div>
 
-      {/* Quant Score Heatmap Modal */}
+      {/* 6x6 Bivariate Poisson Score Probability Heatmap Modal */}
       {showMatrixModal && (
         <ScoreMatrixModal
           fixture={fixture}
