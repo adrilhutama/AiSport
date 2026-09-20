@@ -11,5 +11,22 @@ jobs:
     steps:
       - name: Trigger Background Sync API
         run: |
-          curl -f -X GET "https://${{ secrets.VERCEL_APP_URL }}/api/sync" \
-            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"
+          RAW_URL="${{ secrets.SITE_URL || secrets.VERCEL_APP_URL }}"
+          # Clean domain: remove https:// and trailing slashes
+          TARGET_URL=$(echo "$RAW_URL" | sed -e 's|^https://||' -e 's|/$||')
+          
+          if [ -z "$TARGET_URL" ]; then
+            echo "Error: Neither SITE_URL nor VERCEL_APP_URL secret is set."
+            exit 1
+          fi
+
+          echo "Triggering OddsMatrix sync on https://$TARGET_URL/api/sync..."
+          
+          # Fast sync with 60s timeout
+          curl -m 60 -f -sS -X GET "https://$TARGET_URL/api/sync" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" || {
+              echo "Fast sync failed, triggering individual major leagues fallback..."
+              curl -m 30 -f -sS -X GET "https://$TARGET_URL/api/sync?league=PL" -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" || true
+              curl -m 30 -f -sS -X GET "https://$TARGET_URL/api/sync?league=PD" -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" || true
+              curl -m 30 -f -sS -X GET "https://$TARGET_URL/api/sync?league=CL" -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" || true
+            }

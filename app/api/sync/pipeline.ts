@@ -65,13 +65,18 @@ export function isOddsApiMatchdayActive(date = new Date()): boolean {
   return false;
 }
 
+export interface PipelineOptions {
+  league?: LeagueCode | 'ALL' | string;
+  batch?: boolean;
+}
+
 /**
  * Execute the 3-source Multi-API Orchestration Pipeline:
- * 1. Football-Data.org v4 (Skeleton, Standings, Form & Crests with 6.5s rate-limit delay)
+ * 1. Football-Data.org v4 (Skeleton, Standings, Form & Crests via lightweight parallel fetches)
  * 2. The Odds API v4 (Market Consensus Odds with Poisson Synthetic Fallback)
  * 3. API-Football v3 (Contextual Injuries & xG with 20-req safety guardrail)
  */
-export async function runOrchestrationPipeline(): Promise<{
+export async function runOrchestrationPipeline(options?: PipelineOptions): Promise<{
   success: boolean;
   summary: PipelineSyncSummary;
 }> {
@@ -80,10 +85,27 @@ export async function runOrchestrationPipeline(): Promise<{
   const apiFootballKey = process.env.API_FOOTBALL_KEY || process.env.APISPORTS_KEY;
   const supabase = createServerClient();
 
+  const ALL_LEAGUES: LeagueCode[] = ['PL', 'PD', 'SA', 'BL1', 'FL1', 'CL', 'EL'];
+  let leaguesToSync: LeagueCode[] = ALL_LEAGUES;
+
+  if (options?.league && options.league !== 'ALL') {
+    const parsed = options.league
+      .split(',')
+      .map((s) => s.trim().toUpperCase() as LeagueCode)
+      .filter((lg) => ALL_LEAGUES.includes(lg));
+    if (parsed.length > 0) {
+      leaguesToSync = parsed;
+    }
+  } else if (options?.batch) {
+    const day = new Date().getUTCDay();
+    // Tue/Wed/Thu: European cups; otherwise domestic Tier-1
+    leaguesToSync = day >= 2 && day <= 4 ? ['CL', 'EL'] : ['PL', 'PD'];
+  }
+
   const summary: PipelineSyncSummary = {
     timestamp: new Date().toISOString(),
     mode: 'mock_fallback',
-    leaguesProcessed: ['PL', 'PD', 'SA', 'BL1', 'FL1', 'CL', 'EL'],
+    leaguesProcessed: leaguesToSync,
     fixturesUpdated: 0,
     teamsUpdated: 0,
     oddsUpdated: 0,
@@ -112,9 +134,17 @@ export async function runOrchestrationPipeline(): Promise<{
     summary.details.oddsApiStatus = 'synthetic_applied';
     summary.details.apiFootballStatus = 'mock_context_applied';
 
+    const filteredTeams = leaguesToSync.length === ALL_LEAGUES.length
+      ? Object.values(MOCK_TEAMS)
+      : Object.values(MOCK_TEAMS).filter((t) => leaguesToSync.includes(t.league));
+
+    const filteredFixtures = leaguesToSync.length === ALL_LEAGUES.length
+      ? MOCK_FIXTURES
+      : MOCK_FIXTURES.filter((f) => leaguesToSync.includes(f.league));
+
     if (supabase) {
-      // 1. Teams upsert with fallback form & crests
-      const teamsToUpsert = Object.values(MOCK_TEAMS).map((t) => ({
+      // 1. Teams upsert with robust schema fallback (gracefully handles missing crest_url column)
+      const teamsToUpsert = filteredTeams.map((t) => ({
         id: t.id,
         league: t.league,
         name: t.name,
@@ -123,65 +153,111 @@ export async function runOrchestrationPipeline(): Promise<{
         defense_rating: t.defense_rating,
         form: t.form && t.form !== 'N/A' && t.form !== 'DDDDD' ? t.form : 'WDLWW',
         crest_url: t.crest_url || null,
-        rolling_xg: t.rolling_xg || null,
-        key_injuries_count: t.key_injuries_count || 0,
+        rolling_xg: t.rolling_xg ?? null,
+        key_injuries_count: t.key_injuries_count ?? 0,
       }));
 
-      await supabase.from('teams').upsert(teamsToUpsert, { onConflict: 'id' });
-      summary.teamsUpdated = teamsToUpsert.length;
+      try {
+        const { error: teamErr } = await supabase.from('teams').upsert(teamsToUpsert, { onConflict: 'id' });
+        if (teamErr) {
+          console.warn('[Pipeline] Teams upsert error with extended schema, falling back to base columns:', teamErr.message);
+          const baseTeams = teamsToUpsert.map(({ id, league, name, aliases, attack_rating, defense_rating, form }) => ({
+            id, league, name, aliases, attack_rating, defense_rating, form,
+          }));
+          const { error: baseErr } = await supabase.from('teams').upsert(baseTeams, { onConflict: 'id' });
+          if (baseErr) {
+            console.warn('[Pipeline] Base teams upsert failed:', baseErr.message);
+            summary.errors.push(`Teams base upsert: ${baseErr.message}`);
+          }
+        }
+        summary.teamsUpdated = teamsToUpsert.length;
+      } catch (err: any) {
+        console.warn('[Pipeline] Teams upsert exception:', err.message);
+        summary.errors.push(`Teams upsert: ${err.message}`);
+      }
 
       // 2. Fixtures upsert
-      const fixturesToUpsert = MOCK_FIXTURES.map((f) => ({
-        id: f.id,
-        league: f.league,
-        home_team_id: f.home_team_id,
-        away_team_id: f.away_team_id,
-        match_time: f.match_time,
-        status: f.status || 'SCHEDULED',
-      }));
+      try {
+        const fixturesToUpsert = filteredFixtures.map((f) => ({
+          id: f.id,
+          league: f.league,
+          home_team_id: f.home_team_id,
+          away_team_id: f.away_team_id,
+          match_time: f.match_time,
+          status: f.status || 'SCHEDULED',
+        }));
 
-      await supabase.from('fixtures').upsert(fixturesToUpsert, { onConflict: 'id' });
-      summary.fixturesUpdated = fixturesToUpsert.length;
+        const { error: fixErr } = await supabase.from('fixtures').upsert(fixturesToUpsert, { onConflict: 'id' });
+        if (fixErr) {
+          console.warn('[Pipeline] Fixtures upsert error:', fixErr.message);
+          summary.errors.push(`Fixtures upsert: ${fixErr.message}`);
+        } else {
+          summary.fixturesUpdated = fixturesToUpsert.length;
+        }
+      } catch (err: any) {
+        console.warn('[Pipeline] Fixtures upsert exception:', err.message);
+        summary.errors.push(`Fixtures upsert: ${err.message}`);
+      }
 
       // 3. Market Odds upsert
-      const oddsToUpsert = MOCK_FIXTURES.map((f) => {
-        const synthetic = generateSyntheticMarketOdds(f);
-        return {
-          fixture_id: f.id,
-          bookmaker: f.marketOdds?.bookmaker || synthetic.bookmaker,
-          home_odds: f.marketOdds?.home_odds || synthetic.home_odds,
-          draw_odds: f.marketOdds?.draw_odds || synthetic.draw_odds,
-          away_odds: f.marketOdds?.away_odds || synthetic.away_odds,
-          over_25_odds: f.marketOdds?.over_25_odds || synthetic.over_25_odds,
-          under_25_odds: f.marketOdds?.under_25_odds || synthetic.under_25_odds,
-          handicap_odds: f.marketOdds?.handicap_odds || synthetic.handicap_odds,
-          totals_odds: f.marketOdds?.totals_odds || synthetic.totals_odds,
-          btts_odds: f.marketOdds?.btts_odds || synthetic.btts_odds,
-        };
-      });
+      try {
+        const oddsToUpsert = filteredFixtures.map((f) => {
+          const synthetic = generateSyntheticMarketOdds(f);
+          return {
+            fixture_id: f.id,
+            bookmaker: f.marketOdds?.bookmaker || synthetic.bookmaker,
+            home_odds: f.marketOdds?.home_odds || synthetic.home_odds,
+            draw_odds: f.marketOdds?.draw_odds || synthetic.draw_odds,
+            away_odds: f.marketOdds?.away_odds || synthetic.away_odds,
+            over_25_odds: f.marketOdds?.over_25_odds || synthetic.over_25_odds,
+            under_25_odds: f.marketOdds?.under_25_odds || synthetic.under_25_odds,
+            handicap_odds: f.marketOdds?.handicap_odds || synthetic.handicap_odds,
+            totals_odds: f.marketOdds?.totals_odds || synthetic.totals_odds,
+            btts_odds: f.marketOdds?.btts_odds || synthetic.btts_odds,
+          };
+        });
 
-      await supabase.from('market_odds').upsert(oddsToUpsert, { onConflict: 'fixture_id' });
-      summary.oddsUpdated = oddsToUpsert.length;
+        const { error: oddsErr } = await supabase.from('market_odds').upsert(oddsToUpsert, { onConflict: 'fixture_id' });
+        if (oddsErr) {
+          console.warn('[Pipeline] Market odds upsert error:', oddsErr.message);
+          summary.errors.push(`Market odds upsert: ${oddsErr.message}`);
+        } else {
+          summary.oddsUpdated = oddsToUpsert.length;
+        }
+      } catch (err: any) {
+        console.warn('[Pipeline] Market odds upsert exception:', err.message);
+        summary.errors.push(`Market odds upsert: ${err.message}`);
+      }
 
       // 4. Curated Parlays sync (upcoming only)
-      const freshParlays = generateCuratedParlays(MOCK_FIXTURES);
-      await supabase.from('ai_parlays').delete().eq('status', 'pending');
-      const slipsToInsert = freshParlays.map((p) => ({
-        category: p.category,
-        legs: p.legs,
-        total_odds: p.total_odds,
-        true_probability: p.true_probability,
-        expected_value: p.expected_value,
-        status: 'pending',
-        created_at: new Date().toISOString(),
-      }));
+      try {
+        const freshParlays = generateCuratedParlays(filteredFixtures);
+        await supabase.from('ai_parlays').delete().eq('status', 'pending');
+        const slipsToInsert = freshParlays.map((p) => ({
+          category: p.category,
+          legs: p.legs,
+          total_odds: p.total_odds,
+          true_probability: p.true_probability,
+          expected_value: p.expected_value,
+          status: 'pending',
+          created_at: new Date().toISOString(),
+        }));
 
-      await supabase.from('ai_parlays').insert(slipsToInsert);
-      summary.parlaysUpdated = slipsToInsert.length;
+        const { error: parlayErr } = await supabase.from('ai_parlays').insert(slipsToInsert);
+        if (parlayErr) {
+          console.warn('[Pipeline] AI Parlays insert error:', parlayErr.message);
+          summary.errors.push(`AI Parlays insert: ${parlayErr.message}`);
+        } else {
+          summary.parlaysUpdated = slipsToInsert.length;
+        }
+      } catch (err: any) {
+        console.warn('[Pipeline] AI Parlays exception:', err.message);
+        summary.errors.push(`AI Parlays: ${err.message}`);
+      }
     } else {
-      summary.fixturesUpdated = MOCK_FIXTURES.length;
-      summary.teamsUpdated = Object.keys(MOCK_TEAMS).length;
-      summary.oddsUpdated = MOCK_FIXTURES.length;
+      summary.fixturesUpdated = filteredFixtures.length;
+      summary.teamsUpdated = filteredTeams.length;
+      summary.oddsUpdated = filteredFixtures.length;
       summary.parlaysUpdated = 3;
     }
 
@@ -193,7 +269,6 @@ export async function runOrchestrationPipeline(): Promise<{
 
   // --- LIVE MULTI-SOURCE ORCHESTRATION ---
   summary.mode = 'live_orchestrated';
-  const leagues: LeagueCode[] = ['PL', 'PD', 'SA', 'BL1', 'FL1', 'CL', 'EL'];
   const competitionIds: Record<LeagueCode, string> = {
     PL: 'PL',
     PD: 'PD',
@@ -208,10 +283,10 @@ export async function runOrchestrationPipeline(): Promise<{
   const activeOddsMatchday = isOddsApiMatchdayActive();
 
   // 1. LAYER 1: Football-Data.org v4 (Skeleton & Standings)
-  // Strictly sequential with 6.5s pause to prevent 10 req/min 429
-  for (let i = 0; i < leagues.length; i++) {
-    const lg = leagues[i];
+  // Parallel fetches via Promise.allSettled with 6s timeout per request (NO long sequential sleeps)
+  const footballDataPromises = leaguesToSync.map(async (lg) => {
     const compId = competitionIds[lg];
+    if (!compId) return [];
 
     try {
       const matchRes = await fetch(
@@ -219,92 +294,116 @@ export async function runOrchestrationPipeline(): Promise<{
         {
           headers: { 'X-Auth-Token': footballDataKey },
           next: { revalidate: 3600 },
+          signal: AbortSignal.timeout(6000),
         }
       );
 
-      if (matchRes.ok) {
-        const matchData = await matchRes.json();
-        const matches = matchData.matches || [];
+      if (!matchRes.ok) {
+        console.warn(`[Pipeline] Football-Data returned HTTP ${matchRes.status} for ${lg}`);
+        summary.errors.push(`Football-Data ${lg}: HTTP ${matchRes.status}`);
+        return [];
+      }
 
-        for (const m of matches) {
-          const homeId = findNormalizedTeamId(m.homeTeam.name, lg) || cleanTeamString(m.homeTeam.name);
-          const awayId = findNormalizedTeamId(m.awayTeam.name, lg) || cleanTeamString(m.awayTeam.name);
+      const matchData = await matchRes.json();
+      const matches = matchData.matches || [];
+      const leagueFixtures: Fixture[] = [];
 
-          // Upload crests to Supabase Storage
-          let homeCrest = m.homeTeam.crest;
-          let awayCrest = m.awayTeam.crest;
-          if (homeCrest) {
+      for (const m of matches) {
+        const homeId = findNormalizedTeamId(m.homeTeam.name, lg) || cleanTeamString(m.homeTeam.name);
+        const awayId = findNormalizedTeamId(m.awayTeam.name, lg) || cleanTeamString(m.awayTeam.name);
+
+        let homeCrest = m.homeTeam.crest || null;
+        let awayCrest = m.awayTeam.crest || null;
+        if (homeCrest) {
+          try {
             homeCrest = await uploadTeamCrestToSupabase(homeId, homeCrest);
             summary.details.storageUploads++;
+          } catch (crestErr) {
+            // Keep original URL on storage upload failure
           }
-          if (awayCrest) {
+        }
+        if (awayCrest) {
+          try {
             awayCrest = await uploadTeamCrestToSupabase(awayId, awayCrest);
             summary.details.storageUploads++;
+          } catch (crestErr) {
+            // Keep original URL on storage upload failure
           }
-
-          const homeTeamObj: Team = {
-            id: homeId,
-            league: lg,
-            name: m.homeTeam.shortName || m.homeTeam.name,
-            aliases: [m.homeTeam.name],
-            attack_rating: 1.2,
-            defense_rating: 0.9,
-            form: parseTeamForm(m.homeTeam.form),
-            crest_url: homeCrest,
-          };
-
-          const awayTeamObj: Team = {
-            id: awayId,
-            league: lg,
-            name: m.awayTeam.shortName || m.awayTeam.name,
-            aliases: [m.awayTeam.name],
-            attack_rating: 1.1,
-            defense_rating: 1.0,
-            form: parseTeamForm(m.awayTeam.form),
-            crest_url: awayCrest,
-          };
-
-          const fix: Fixture = {
-            id: `${lg.toLowerCase()}-${homeId}-${awayId}`,
-            league: lg,
-            home_team_id: homeId,
-            away_team_id: awayId,
-            match_time: m.utcDate,
-            status: m.status || 'SCHEDULED',
-            homeTeam: homeTeamObj,
-            awayTeam: awayTeamObj,
-          };
-          syncedFixtures.push(fix);
         }
-      }
 
-      // Enforce 6.5s delay before next competition request
-      if (i < leagues.length - 1) {
-        await sleep(6500);
+        const homeTeamObj: Team = {
+          id: homeId,
+          league: lg,
+          name: m.homeTeam.shortName || m.homeTeam.name,
+          aliases: [m.homeTeam.name],
+          attack_rating: 1.2,
+          defense_rating: 0.9,
+          form: parseTeamForm(m.homeTeam.form),
+          crest_url: homeCrest,
+        };
+
+        const awayTeamObj: Team = {
+          id: awayId,
+          league: lg,
+          name: m.awayTeam.shortName || m.awayTeam.name,
+          aliases: [m.awayTeam.name],
+          attack_rating: 1.1,
+          defense_rating: 1.0,
+          form: parseTeamForm(m.awayTeam.form),
+          crest_url: awayCrest,
+        };
+
+        const fix: Fixture = {
+          id: `${lg.toLowerCase()}-${homeId}-${awayId}`,
+          league: lg,
+          home_team_id: homeId,
+          away_team_id: awayId,
+          match_time: m.utcDate,
+          status: m.status || 'SCHEDULED',
+          homeTeam: homeTeamObj,
+          awayTeam: awayTeamObj,
+        };
+        leagueFixtures.push(fix);
       }
+      return leagueFixtures;
     } catch (err: any) {
       console.warn(`[Pipeline] Football-Data sync error for ${lg}:`, err.message);
       summary.errors.push(`Football-Data ${lg}: ${err.message}`);
+      return [];
     }
+  });
+
+  const footballResults = await Promise.allSettled(footballDataPromises);
+  for (const res of footballResults) {
+    if (res.status === 'fulfilled' && Array.isArray(res.value)) {
+      syncedFixtures.push(...res.value);
+    }
+  }
+
+  // If live calls returned zero fixtures, fallback gracefully to mock fixtures
+  if (syncedFixtures.length === 0) {
+    console.warn('[Pipeline] No live fixtures retrieved, falling back to mock fixtures for active leagues.');
+    const fallback = MOCK_FIXTURES.filter((f) => leaguesToSync.includes(f.league));
+    syncedFixtures.push(...(fallback.length > 0 ? fallback : MOCK_FIXTURES));
   }
 
   // 2. LAYER 2: The Odds API v4 (Consensus Odds & Poisson Synthetic Fallback)
   let oddsQuotaRemaining = 500;
-  for (const lg of leagues) {
+  const oddsPromises = leaguesToSync.map(async (lg) => {
     const lgInfo = LEAGUES_DATA[lg];
-    if (!lgInfo?.oddsApiKey) continue;
+    if (!lgInfo?.oddsApiKey) return;
 
     if (!activeOddsMatchday) {
-      // Non-matchday: use synthetic odds generator to preserve monthly API quota
       syncedFixtures.filter((f) => f.league === lg).forEach((f) => {
         f.marketOdds = generateSyntheticMarketOdds(f);
       });
-      continue;
+      return;
     }
 
     try {
       const oddsRes = await fetch(
-        `https://api.the-odds-api.com/v4/sports/${lgInfo.oddsApiKey}/odds/?apiKey=${oddsApiKey}&regions=eu&markets=h2h,spreads,totals&oddsFormat=decimal`
+        `https://api.the-odds-api.com/v4/sports/${lgInfo.oddsApiKey}/odds/?apiKey=${oddsApiKey}&regions=eu&markets=h2h,spreads,totals&oddsFormat=decimal`,
+        { signal: AbortSignal.timeout(6000) }
       );
 
       const remHeader = oddsRes.headers.get('x-requests-remaining');
@@ -314,16 +413,15 @@ export async function runOrchestrationPipeline(): Promise<{
       }
 
       if (oddsRes.status === 429 || oddsQuotaRemaining <= 0) {
-        console.warn(`[Pipeline] The Odds API quota depleted or rate-limited (${oddsRes.status}). Triggering Synthetic Fair Odds Generator fallback.`);
+        console.warn(`[Pipeline] The Odds API quota depleted or rate-limited (${oddsRes.status}) for ${lg}. Applying Poisson Synthetic Fair Odds.`);
         syncedFixtures.filter((f) => f.league === lg).forEach((f) => {
           f.marketOdds = generateSyntheticMarketOdds(f);
         });
-        continue;
+        return;
       }
 
       if (oddsRes.ok) {
         const bookOdds = await oddsRes.json();
-        // Match odds to fixtures
         for (const bo of bookOdds) {
           const hId = findNormalizedTeamId(bo.home_team, lg);
           const aId = findNormalizedTeamId(bo.away_team, lg);
@@ -375,14 +473,27 @@ export async function runOrchestrationPipeline(): Promise<{
     } catch (err: any) {
       console.warn(`[Pipeline] The Odds API error for ${lg}:`, err.message);
       summary.errors.push(`The Odds API ${lg}: ${err.message}`);
+      syncedFixtures.filter((f) => f.league === lg && !f.marketOdds).forEach((f) => {
+        f.marketOdds = generateSyntheticMarketOdds(f);
+      });
     }
-  }
+  });
+
+  await Promise.allSettled(oddsPromises);
+
+  // Guarantee every fixture has calibrated market odds
+  syncedFixtures.forEach((f) => {
+    if (!f.marketOdds) {
+      f.marketOdds = generateSyntheticMarketOdds(f);
+    }
+  });
 
   // 3. LAYER 3: API-Football v3 (Contextual Intelligence Layer: Injuries & xG)
   if (apiFootballKey) {
     try {
       const injuryRes = await fetch('https://v3.football.api-sports.io/status', {
         headers: { 'x-apisports-key': apiFootballKey },
+        signal: AbortSignal.timeout(4000),
       });
 
       if (injuryRes.ok) {
@@ -396,17 +507,18 @@ export async function runOrchestrationPipeline(): Promise<{
         }
       }
     } catch (err: any) {
-      console.warn('[Pipeline] API-Football status check failed:', err.message);
+      console.warn('[Pipeline] API-Football status check error:', err.message);
     }
   }
 
-  // Persist all gathered fixtures and odds to Supabase if connected
+  // Persist all gathered fixtures and odds to Supabase with robust column fallbacks
   if (supabase && syncedFixtures.length > 0) {
     const teamsToUpsert = syncedFixtures.flatMap((f) => [f.homeTeam, f.awayTeam]).filter(Boolean);
     const uniqueTeams = Array.from(new Map(teamsToUpsert.map((t) => [t!.id, t!])).values());
 
-    await supabase.from('teams').upsert(
-      uniqueTeams.map((t) => ({
+    // 1. Teams upsert with crest_url schema fallback
+    try {
+      const payload = uniqueTeams.map((t) => ({
         id: t.id,
         league: t.league,
         name: t.name,
@@ -414,44 +526,91 @@ export async function runOrchestrationPipeline(): Promise<{
         attack_rating: t.attack_rating,
         defense_rating: t.defense_rating,
         form: t.form,
-        crest_url: t.crest_url,
-      })),
-      { onConflict: 'id' }
-    );
-    summary.teamsUpdated = uniqueTeams.length;
+        crest_url: t.crest_url || null,
+      }));
 
-    await supabase.from('fixtures').upsert(
-      syncedFixtures.map((f) => ({
-        id: f.id,
-        league: f.league,
-        home_team_id: f.home_team_id,
-        away_team_id: f.away_team_id,
-        match_time: f.match_time,
-        status: f.status,
-      })),
-      { onConflict: 'id' }
-    );
-    summary.fixturesUpdated = syncedFixtures.length;
+      const { error: liveTeamErr } = await supabase.from('teams').upsert(payload, { onConflict: 'id' });
+      if (liveTeamErr) {
+        console.warn('[Pipeline] Live teams upsert with crest_url failed, retrying with base columns:', liveTeamErr.message);
+        const baseTeams = payload.map(({ id, league, name, aliases, attack_rating, defense_rating, form }) => ({
+          id, league, name, aliases, attack_rating, defense_rating, form,
+        }));
+        const { error: baseErr } = await supabase.from('teams').upsert(baseTeams, { onConflict: 'id' });
+        if (baseErr) {
+          console.warn('[Pipeline] Live base teams upsert failed:', baseErr.message);
+          summary.errors.push(`Teams base upsert: ${baseErr.message}`);
+        }
+      }
+      summary.teamsUpdated = uniqueTeams.length;
+    } catch (err: any) {
+      console.warn('[Pipeline] Live teams upsert exception:', err.message);
+      summary.errors.push(`Live teams upsert: ${err.message}`);
+    }
 
-    const oddsToUpsert = syncedFixtures.filter((f) => f.marketOdds).map((f) => f.marketOdds!);
-    await supabase.from('market_odds').upsert(oddsToUpsert, { onConflict: 'fixture_id' });
-    summary.oddsUpdated = oddsToUpsert.length;
+    // 2. Fixtures upsert
+    try {
+      const { error: fixErr } = await supabase.from('fixtures').upsert(
+        syncedFixtures.map((f) => ({
+          id: f.id,
+          league: f.league,
+          home_team_id: f.home_team_id,
+          away_team_id: f.away_team_id,
+          match_time: f.match_time,
+          status: f.status,
+        })),
+        { onConflict: 'id' }
+      );
+      if (fixErr) {
+        console.warn('[Pipeline] Fixtures live upsert error:', fixErr.message);
+        summary.errors.push(`Fixtures live upsert: ${fixErr.message}`);
+      } else {
+        summary.fixturesUpdated = syncedFixtures.length;
+      }
+    } catch (err: any) {
+      console.warn('[Pipeline] Fixtures live upsert exception:', err.message);
+      summary.errors.push(`Fixtures live upsert: ${err.message}`);
+    }
 
-    // Refresh upcoming parlays
-    const freshParlays = generateCuratedParlays(syncedFixtures);
-    await supabase.from('ai_parlays').delete().eq('status', 'pending');
-    await supabase.from('ai_parlays').insert(
-      freshParlays.map((p) => ({
-        category: p.category,
-        legs: p.legs,
-        total_odds: p.total_odds,
-        true_probability: p.true_probability,
-        expected_value: p.expected_value,
-        status: 'pending',
-        created_at: new Date().toISOString(),
-      }))
-    );
-    summary.parlaysUpdated = freshParlays.length;
+    // 3. Market Odds upsert
+    try {
+      const oddsToUpsert = syncedFixtures.filter((f) => f.marketOdds).map((f) => f.marketOdds!);
+      const { error: oddsErr } = await supabase.from('market_odds').upsert(oddsToUpsert, { onConflict: 'fixture_id' });
+      if (oddsErr) {
+        console.warn('[Pipeline] Market odds live upsert error:', oddsErr.message);
+        summary.errors.push(`Market odds live upsert: ${oddsErr.message}`);
+      } else {
+        summary.oddsUpdated = oddsToUpsert.length;
+      }
+    } catch (err: any) {
+      console.warn('[Pipeline] Market odds live upsert exception:', err.message);
+      summary.errors.push(`Market odds live upsert: ${err.message}`);
+    }
+
+    // 4. Refresh upcoming parlays
+    try {
+      const freshParlays = generateCuratedParlays(syncedFixtures);
+      await supabase.from('ai_parlays').delete().eq('status', 'pending');
+      const { error: parlayErr } = await supabase.from('ai_parlays').insert(
+        freshParlays.map((p) => ({
+          category: p.category,
+          legs: p.legs,
+          total_odds: p.total_odds,
+          true_probability: p.true_probability,
+          expected_value: p.expected_value,
+          status: 'pending',
+          created_at: new Date().toISOString(),
+        }))
+      );
+      if (parlayErr) {
+        console.warn('[Pipeline] AI Parlays live insert error:', parlayErr.message);
+        summary.errors.push(`AI Parlays live insert: ${parlayErr.message}`);
+      } else {
+        summary.parlaysUpdated = freshParlays.length;
+      }
+    } catch (err: any) {
+      console.warn('[Pipeline] AI Parlays live exception:', err.message);
+      summary.errors.push(`AI Parlays live exception: ${err.message}`);
+    }
   }
 
   return {
