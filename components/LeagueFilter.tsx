@@ -24,6 +24,8 @@ export const LeagueFilter: React.FC<LeagueFilterProps> = ({
     { code: 'SA', name: 'Serie A', flag: LEAGUES_DATA.SA.flag, emblem: LEAGUES_DATA.SA.emblem_url },
     { code: 'BL1', name: 'Bundesliga', flag: LEAGUES_DATA.BL1.flag, emblem: LEAGUES_DATA.BL1.emblem_url },
     { code: 'FL1', name: 'Ligue 1', flag: LEAGUES_DATA.FL1.flag, emblem: LEAGUES_DATA.FL1.emblem_url },
+    { code: 'CL', name: 'Champions League', flag: LEAGUES_DATA.CL.flag, emblem: LEAGUES_DATA.CL.emblem_url },
+    { code: 'EL', name: 'Europa League', flag: LEAGUES_DATA.EL.flag, emblem: LEAGUES_DATA.EL.emblem_url },
   ];
 
   return (

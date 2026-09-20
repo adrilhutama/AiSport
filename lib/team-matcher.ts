@@ -117,6 +117,24 @@ export const TEAM_ALIASES_BY_LEAGUE: Record<LeagueCode, Record<string, string[]>
     'angers': ['angers sco', 'angers'],
     'saint-etienne': ['as saint-étienne', 'as saint-etienne', 'saint-étienne', 'saint-etienne'],
   },
+
+  CL: {
+    'real-madrid-cl': ['real madrid', 'real madrid cf', 'madrid'],
+    'man-city-cl': ['manchester city', 'man city', 'manchester city fc'],
+    'bayern-munich-cl': ['bayern munich', 'fc bayern munchen', 'bayern'],
+    'bayer-leverkusen-cl': ['bayer leverkusen', 'bayer 04 leverkusen', 'leverkusen'],
+    'sporting-cp': ['sporting cp', 'sporting clube de portugal', 'sporting lisbon', 'sporting'],
+    'celtic': ['celtic', 'celtic fc'],
+  },
+
+  EL: {
+    'roma-el': ['as roma', 'roma'],
+    'porto': ['fc porto', 'porto'],
+    'athletic-bilbao-el': ['athletic club', 'athletic bilbao', 'bilbao'],
+    'galatasaray': ['galatasaray', 'galatasaray sk'],
+    'ajax': ['ajax', 'afc ajax'],
+    'fenerbahce': ['fenerbahce', 'fenerbahce sk'],
+  },
 };
 
 // Flattened dictionary of all teams for backward compatibility

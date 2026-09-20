@@ -227,22 +227,68 @@ export const BettingSlip: React.FC<BettingSlipProps> = ({
             </div>
 
             {/* Custom Stake & Payout */}
-            <div className="pt-2 border-t border-slate-700/60 flex items-center justify-between text-xs">
-              <div>
-                <label className="text-[11px] text-slate-400 block mb-1">Wager Stake (Rp)</label>
-                <input
-                  type="number"
-                  placeholder={formatIDR(kelly.recommendedStakeAmount)}
-                  value={customStake}
-                  onChange={(e) => setCustomStake(e.target.value)}
-                  className="w-28 bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 font-mono text-white text-xs focus:outline-none focus:border-cyan-500"
-                />
+            <div className="pt-2 border-t border-slate-700/60 space-y-2 text-xs">
+              {/* Quick stake increment chips */}
+              <div className="space-y-1">
+                <span className="text-[9px] font-mono text-slate-400 uppercase tracking-wider block">
+                  Quick Stake Increments
+                </span>
+                <div className="grid grid-cols-5 gap-1 font-mono text-[10px] font-bold">
+                  <button
+                    type="button"
+                    onClick={() => setCustomStake(String((parseFloat(customStake) || kelly.recommendedStakeAmount) + 10000))}
+                    className="py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700/60 transition-colors"
+                  >
+                    +10rb
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCustomStake(String((parseFloat(customStake) || kelly.recommendedStakeAmount) + 50000))}
+                    className="py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700/60 transition-colors"
+                  >
+                    +50rb
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCustomStake(String((parseFloat(customStake) || kelly.recommendedStakeAmount) + 100000))}
+                    className="py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700/60 transition-colors"
+                  >
+                    +100rb
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCustomStake(String((parseFloat(customStake) || kelly.recommendedStakeAmount) + 500000))}
+                    className="py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700/60 transition-colors"
+                  >
+                    +500rb
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCustomStake(String(bankroll))}
+                    className="py-1 rounded bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 transition-colors"
+                  >
+                    Max
+                  </button>
+                </div>
               </div>
 
-              <div className="text-right">
-                <div className="text-[11px] text-slate-400">Potential Payout</div>
-                <div className="text-base font-mono font-bold text-emerald-400">
-                  {formatIDR(potentialPayout)}
+              <div className="flex items-center justify-between">
+                <div>
+                  <label className="text-[11px] text-slate-400 block mb-1">Wager Stake (Rp)</label>
+                  <input
+                    type="number"
+                    placeholder={formatIDR(kelly.recommendedStakeAmount)}
+                    value={customStake}
+                    onChange={(e) => setCustomStake(e.target.value)}
+                    className="w-28 bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 font-mono text-white text-xs focus:outline-none focus:border-cyan-500"
+                  />
+                </div>
+
+                <div className="text-right">
+                  <div className="text-[11px] text-slate-400">Potential Payout</div>
+                  <div className="text-base font-mono font-bold text-emerald-400">
+                    {formatIDR(potentialPayout)}
+                  </div>
                 </div>
               </div>
             </div>

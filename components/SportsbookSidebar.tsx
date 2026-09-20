@@ -32,6 +32,8 @@ export const SportsbookSidebar: React.FC<SportsbookSidebarProps> = ({
     { code: 'SA', name: 'Serie A', country: 'Italy', flag: '🇮🇹', emblem: LEAGUES_DATA.SA.emblem_url },
     { code: 'BL1', name: 'Bundesliga', country: 'Germany', flag: '🇩🇪', emblem: LEAGUES_DATA.BL1.emblem_url },
     { code: 'FL1', name: 'Ligue 1', country: 'France', flag: '🇫🇷', emblem: LEAGUES_DATA.FL1.emblem_url },
+    { code: 'CL', name: 'Champions League', country: 'Europe', flag: '⭐', emblem: LEAGUES_DATA.CL.emblem_url },
+    { code: 'EL', name: 'Europa League', country: 'Europe', flag: '🏆', emblem: LEAGUES_DATA.EL.emblem_url },
   ];
 
   const sportsCategories = [

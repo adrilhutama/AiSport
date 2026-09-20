@@ -13,6 +13,7 @@ import { AIParlayCard } from '@/components/AIParlayCard';
 import { HitRateTracker } from '@/components/HitRateTracker';
 import { LiveScoreTicker } from '@/components/LiveScoreTicker';
 import { analyzeFixtureQuant } from '@/lib/analytics';
+import { useRealtimeOdds } from '@/hooks/useRealtimeOdds';
 import { Sparkles, Layers, TrendingUp, Cpu, Database, Calendar } from 'lucide-react';
 
 interface DashboardClientProps {
@@ -36,6 +37,21 @@ export const DashboardClient: React.FC<DashboardClientProps> = ({
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [syncToast, setSyncToast] = useState<string | null>(null);
   const [matrixFixture, setMatrixFixture] = useState<Fixture | null>(null);
+
+  // Realtime odds subscription with green flashing micro-animation
+  const initialOdds = initialFixtures.map((f) => f.marketOdds).filter(Boolean) as any[];
+  const { recentlyUpdatedIds } = useRealtimeOdds(initialOdds, (newOdds) => {
+    setFixtures((prev) =>
+      prev.map((f) => {
+        if (f.id === newOdds.fixture_id) {
+          const updated = { ...f, marketOdds: newOdds };
+          updated.quantAnalysis = analyzeFixtureQuant(updated);
+          return updated;
+        }
+        return f;
+      })
+    );
+  });
 
   // Sync state with incoming server props
   useEffect(() => {
@@ -63,6 +79,8 @@ export const DashboardClient: React.FC<DashboardClientProps> = ({
     SA: fixtures.filter((f) => f.league === 'SA').length,
     BL1: fixtures.filter((f) => f.league === 'BL1').length,
     FL1: fixtures.filter((f) => f.league === 'FL1').length,
+    CL: fixtures.filter((f) => f.league === 'CL').length,
+    EL: fixtures.filter((f) => f.league === 'EL').length,
   };
 
   // Toggle individual leg in the betting slip
@@ -314,6 +332,7 @@ export const DashboardClient: React.FC<DashboardClientProps> = ({
                   onToggleLeg={handleToggleLeg}
                   onOpenMatrix={(fixture) => setMatrixFixture(fixture)}
                   selectedLeague={selectedLeague}
+                  recentlyUpdatedIds={recentlyUpdatedIds}
                 />
               </div>
             )}

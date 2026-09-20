@@ -26,6 +26,58 @@ export async function getOddsMatrixData(): Promise<{
   }
 
   try {
+    // Attempt fast single-call RPC get_sportsbook_board
+    const { data: rpcBoard, error: rpcError } = await supabase.rpc('get_sportsbook_board', {
+      league_filter: 'ALL',
+    });
+
+    if (!rpcError && Array.isArray(rpcBoard) && rpcBoard.length > 0) {
+      const fixtures: Fixture[] = rpcBoard.map((f: any) => {
+        const fixtureObj: Fixture = {
+          id: f.id,
+          league: f.league,
+          home_team_id: f.home_team_id,
+          away_team_id: f.away_team_id,
+          match_time: f.match_time,
+          status: f.status || 'SCHEDULED',
+          homeTeam: f.homeTeam,
+          awayTeam: f.awayTeam,
+          marketOdds: f.marketOdds,
+        };
+        fixtureObj.quantAnalysis = analyzeFixtureQuant(fixtureObj);
+        return fixtureObj;
+      });
+
+      const { data: parlaysRaw } = await supabase
+        .from('ai_parlays')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      const activeCuratedSlips = generateCuratedParlays(fixtures);
+      const settledSlips = (parlaysRaw || [])
+        .filter((p: any) => p.status === 'won' || p.status === 'lost')
+        .map((p: any) => ({
+          id: p.id,
+          category: p.category,
+          title: p.title || (p.category === 'safe' ? 'Safe Combo #48' : p.category === 'value' ? 'Value Seeker #29' : 'Weekend Lotto Moonshot #14'),
+          description: p.description || `Expected Value +${p.expected_value}%`,
+          legs: typeof p.legs === 'string' ? JSON.parse(p.legs) : p.legs || [],
+          total_odds: Number(p.total_odds),
+          true_probability: Number(p.true_probability),
+          expected_value: Number(p.expected_value),
+          status: p.status,
+          created_at: p.created_at || new Date().toISOString(),
+        }));
+
+      const parlays = [...activeCuratedSlips, ...(settledSlips.length > 0 ? settledSlips : MOCK_HISTORICAL_PARLAYS.filter((p) => p.status === 'won' || p.status === 'lost'))];
+
+      return {
+        fixtures,
+        parlays,
+        source: 'supabase',
+      };
+    }
+
     // 1. Fetch teams, fixtures, and market odds from Supabase concurrently
     const [teamsRes, fixturesRes, oddsRes, parlaysRes] = await Promise.all([
       supabase.from('teams').select('*'),

@@ -13,7 +13,9 @@ CREATE TABLE IF NOT EXISTS public.teams (
     attack_rating NUMERIC(5,2) DEFAULT 1.00,   -- Relative attacking strength (1.00 = league baseline)
     defense_rating NUMERIC(5,2) DEFAULT 1.00,  -- Relative defensive conceded multiplier (1.00 = baseline)
     form TEXT DEFAULT 'N/A',                   -- Last 5 matches (W, D, L) string
-    crest_url TEXT,                            -- Official SVG/PNG crest URL from Football-Data.org
+    crest_url TEXT,                            -- Official SVG/PNG crest URL from Football-Data.org or Supabase CDN
+    rolling_xg NUMERIC(5,2) DEFAULT NULL,      -- Contextual rolling xG from API-Football
+    key_injuries_count INT DEFAULT 0,          -- Contextual key starters out
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -21,7 +23,7 @@ CREATE TABLE IF NOT EXISTS public.teams (
 -- 3. Fixtures Table
 CREATE TABLE IF NOT EXISTS public.fixtures (
     id TEXT PRIMARY KEY,                       -- Fixture identifier, e.g. 'pl-arsenal-chelsea-2026-09-20'
-    league TEXT NOT NULL,                      -- 'PL', 'PD', 'SA', 'BL1', 'FL1'
+    league TEXT NOT NULL,                      -- 'PL', 'PD', 'SA', 'BL1', 'FL1', 'CL', 'EL'
     home_team_id TEXT REFERENCES public.teams(id) ON DELETE SET NULL,
     away_team_id TEXT REFERENCES public.teams(id) ON DELETE SET NULL,
     match_time TIMESTAMPTZ NOT NULL,           -- Scheduled kickoff time in UTC
@@ -42,6 +44,11 @@ CREATE TABLE IF NOT EXISTS public.market_odds (
     handicap_odds JSONB DEFAULT '{}',          -- Asian Handicap lines (e.g. {"home_-1.5": 2.60, "away_+1.5": 1.50})
     totals_odds JSONB DEFAULT '{}',            -- Alternate totals (e.g. {"over_1.5": 1.25, "under_1.5": 3.90})
     btts_odds JSONB DEFAULT '{}',              -- Both Teams to Score (e.g. {"btts_yes": 1.75, "btts_no": 2.05})
+    is_positive_ev BOOLEAN DEFAULT false,      -- Computed by PL/pgSQL trigger
+    ev_home NUMERIC(5,2) DEFAULT 0.00,
+    ev_draw NUMERIC(5,2) DEFAULT 0.00,
+    ev_away NUMERIC(5,2) DEFAULT 0.00,
+    max_ev NUMERIC(5,2) DEFAULT 0.00,
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -103,6 +110,138 @@ FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
 CREATE OR REPLACE TRIGGER trg_market_odds_updated_at
 BEFORE UPDATE ON public.market_odds
 FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
+
+-- Automated +EV Computation Trigger on market_odds
+CREATE OR REPLACE FUNCTION public.compute_market_odds_ev()
+RETURNS TRIGGER AS $$
+DECLARE
+    v_home_attack NUMERIC(5,2) := 1.15;
+    v_home_defense NUMERIC(5,2) := 0.90;
+    v_away_attack NUMERIC(5,2) := 1.05;
+    v_away_defense NUMERIC(5,2) := 1.05;
+    v_lambda_h NUMERIC(6,3);
+    v_lambda_a NUMERIC(6,3);
+    v_prob_home NUMERIC(6,4);
+    v_prob_draw NUMERIC(6,4);
+    v_prob_away NUMERIC(6,4);
+    v_p_total NUMERIC(6,4);
+BEGIN
+    SELECT 
+        COALESCE(ht.attack_rating, 1.15),
+        COALESCE(ht.defense_rating, 0.90),
+        COALESCE(at.attack_rating, 1.05),
+        COALESCE(at.defense_rating, 1.05)
+    INTO 
+        v_home_attack, v_home_defense, v_away_attack, v_away_defense
+    FROM public.fixtures f
+    LEFT JOIN public.teams ht ON f.home_team_id = ht.id
+    LEFT JOIN public.teams at ON f.away_team_id = at.id
+    WHERE f.id = NEW.fixture_id;
+
+    v_lambda_h := GREATEST(0.3, 1.55 * v_home_attack * v_away_defense);
+    v_lambda_a := GREATEST(0.3, 1.25 * v_away_attack * v_home_defense);
+
+    v_prob_home := (v_lambda_h / (v_lambda_h + v_lambda_a + 0.90));
+    v_prob_draw := (0.90 / (v_lambda_h + v_lambda_a + 0.90));
+    v_prob_away := (v_lambda_a / (v_lambda_h + v_lambda_a + 0.90));
+
+    v_p_total := v_prob_home + v_prob_draw + v_prob_away;
+    IF v_p_total > 0 THEN
+        v_prob_home := v_prob_home / v_p_total;
+        v_prob_draw := v_prob_draw / v_p_total;
+        v_prob_away := v_prob_away / v_p_total;
+    END IF;
+
+    NEW.ev_home := LEAST(25.0, GREATEST(-100.0, ROUND(((v_prob_home * NEW.home_odds - 1.0) * 100)::numeric, 2)));
+    NEW.ev_draw := LEAST(25.0, GREATEST(-100.0, ROUND(((v_prob_draw * NEW.draw_odds - 1.0) * 100)::numeric, 2)));
+    NEW.ev_away := LEAST(25.0, GREATEST(-100.0, ROUND(((v_prob_away * NEW.away_odds - 1.0) * 100)::numeric, 2)));
+
+    NEW.max_ev := GREATEST(NEW.ev_home, NEW.ev_draw, NEW.ev_away, 0.0);
+    NEW.is_positive_ev := (NEW.max_ev > 0.0);
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_compute_market_odds_ev ON public.market_odds;
+CREATE TRIGGER trg_compute_market_odds_ev
+BEFORE INSERT OR UPDATE ON public.market_odds
+FOR EACH ROW EXECUTE FUNCTION public.compute_market_odds_ev();
+
+-- High-Performance Single-Call RPC: get_sportsbook_board
+CREATE OR REPLACE FUNCTION public.get_sportsbook_board(league_filter TEXT DEFAULT 'ALL')
+RETURNS JSONB AS $$
+DECLARE
+    result JSONB;
+BEGIN
+    SELECT jsonb_agg(
+        jsonb_build_object(
+            'id', f.id,
+            'league', f.league,
+            'home_team_id', f.home_team_id,
+            'away_team_id', f.away_team_id,
+            'match_time', f.match_time,
+            'status', f.status,
+            'homeTeam', jsonb_build_object(
+                'id', ht.id,
+                'league', ht.league,
+                'name', ht.name,
+                'aliases', ht.aliases,
+                'attack_rating', ht.attack_rating,
+                'defense_rating', ht.defense_rating,
+                'form', ht.form,
+                'crest_url', ht.crest_url,
+                'rolling_xg', ht.rolling_xg,
+                'key_injuries_count', ht.key_injuries_count
+            ),
+            'awayTeam', jsonb_build_object(
+                'id', at.id,
+                'league', at.league,
+                'name', at.name,
+                'aliases', at.aliases,
+                'attack_rating', at.attack_rating,
+                'defense_rating', at.defense_rating,
+                'form', at.form,
+                'crest_url', at.crest_url,
+                'rolling_xg', at.rolling_xg,
+                'key_injuries_count', at.key_injuries_count
+            ),
+            'marketOdds', jsonb_build_object(
+                'fixture_id', mo.fixture_id,
+                'bookmaker', mo.bookmaker,
+                'home_odds', mo.home_odds,
+                'draw_odds', mo.draw_odds,
+                'away_odds', mo.away_odds,
+                'over_25_odds', mo.over_25_odds,
+                'under_25_odds', mo.under_25_odds,
+                'handicap_odds', mo.handicap_odds,
+                'totals_odds', mo.totals_odds,
+                'btts_odds', mo.btts_odds,
+                'is_positive_ev', mo.is_positive_ev,
+                'ev_home', mo.ev_home,
+                'ev_draw', mo.ev_draw,
+                'ev_away', mo.ev_away,
+                'max_ev', mo.max_ev,
+                'updated_at', mo.updated_at
+            )
+        )
+    )
+    INTO result
+    FROM public.fixtures f
+    LEFT JOIN public.teams ht ON f.home_team_id = ht.id
+    LEFT JOIN public.teams at ON f.away_team_id = at.id
+    LEFT JOIN public.market_odds mo ON f.id = mo.fixture_id
+    WHERE (league_filter = 'ALL' OR league_filter IS NULL OR f.league = league_filter)
+    ORDER BY f.match_time ASC;
+
+    RETURN COALESCE(result, '[]'::jsonb);
+END;
+$$ LANGUAGE plpgsql;
+
+-- Storage Bucket for Team Crests (Public CDN)
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('team-crests', 'team-crests', true)
+ON CONFLICT (id) DO UPDATE SET public = true;
 
 -- Seed Historical AI Parlays for Hit-Rate Tracker Verification
 INSERT INTO public.ai_parlays (category, legs, total_odds, true_probability, expected_value, status, created_at)

@@ -95,10 +95,29 @@ export function analyzeFixtureQuant(
   const awayAttack = Math.min(1.45, Math.max(0.70, shrinkRating(rawAwayAttack)));
   const awayDefense = Math.min(1.35, Math.max(0.70, shrinkRating(rawAwayDefense)));
 
-  // Expected goals: lambda_home = league_avg_home * home_attack * away_defense
-  // Expected goals: lambda_away = league_avg_away * away_attack * home_defense
-  const lambdaHome = Math.max(0.2, Number((league.avgHomeGoals * homeAttack * awayDefense).toFixed(3)));
-  const lambdaAway = Math.max(0.2, Number((league.avgAwayGoals * awayAttack * homeDefense).toFixed(3)));
+  // Expected goals base: lambda_home = league_avg_home * home_attack * away_defense
+  // Expected goals base: lambda_away = league_avg_away * away_attack * home_defense
+  let homeGoalExp = league.avgHomeGoals * homeAttack * awayDefense;
+  let awayGoalExp = league.avgAwayGoals * awayAttack * homeDefense;
+
+  // Contextual Adjustment 1: Blend with rolling xG if available (0.65 * Goals + 0.35 * xG)
+  if (typeof homeTeam?.rolling_xg === 'number' && homeTeam.rolling_xg > 0) {
+    homeGoalExp = 0.65 * homeGoalExp + 0.35 * homeTeam.rolling_xg;
+  }
+  if (typeof awayTeam?.rolling_xg === 'number' && awayTeam.rolling_xg > 0) {
+    awayGoalExp = 0.65 * awayGoalExp + 0.35 * awayTeam.rolling_xg;
+  }
+
+  // Contextual Adjustment 2: Key missing player penalties (reduce lambda by 10% if key starters are out)
+  if (typeof homeTeam?.key_injuries_count === 'number' && homeTeam.key_injuries_count > 0) {
+    homeGoalExp *= 0.90;
+  }
+  if (typeof awayTeam?.key_injuries_count === 'number' && awayTeam.key_injuries_count > 0) {
+    awayGoalExp *= 0.90;
+  }
+
+  const lambdaHome = Math.max(0.2, Number(homeGoalExp.toFixed(3)));
+  const lambdaAway = Math.max(0.2, Number(awayGoalExp.toFixed(3)));
 
   // Generate 6x6 score matrix with Dixon-Coles low-score adjustment
   const matrixSize = 6;

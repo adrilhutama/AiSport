@@ -109,6 +109,29 @@ export const TEAM_CREST_MAP: Record<string, string> = {
   'angers': 'https://crests.football-data.org/532.png',
   'le-havre': 'https://crests.football-data.org/536.png',
   'saint-etienne': 'https://crests.football-data.org/527.png',
+
+  // UEFA Champions League & Europa League Special / Additional European Clubs
+  'real-madrid-cl': 'https://crests.football-data.org/86.png',
+  'man-city-cl': 'https://crests.football-data.org/65.png',
+  'bayern-munich-cl': 'https://crests.football-data.org/5.png',
+  'bayer-leverkusen-cl': 'https://crests.football-data.org/3.png',
+  'psg-cl': 'https://crests.football-data.org/524.png',
+  'arsenal-cl': 'https://crests.football-data.org/57.png',
+  'barcelona-cl': 'https://crests.football-data.org/81.png',
+  'inter-cl': 'https://crests.football-data.org/108.png',
+  'sporting-cp': 'https://crests.football-data.org/498.png',
+  'feyenoord': 'https://crests.football-data.org/675.png',
+  'celtic': 'https://crests.football-data.org/332.png',
+  'benfica': 'https://crests.football-data.org/1903.png',
+  'porto': 'https://crests.football-data.org/503.png',
+  'roma-el': 'https://crests.football-data.org/100.png',
+  'athletic-bilbao-el': 'https://crests.football-data.org/77.png',
+  'galatasaray': 'https://crests.football-data.org/610.png',
+  'fenerbahce': 'https://crests.football-data.org/605.png',
+  'ajax': 'https://crests.football-data.org/678.png',
+  'lazio-el': 'https://crests.football-data.org/110.png',
+  'tottenham-el': 'https://crests.football-data.org/73.png',
+  'man-united-el': 'https://crests.football-data.org/66.png',
 };
 
 /**

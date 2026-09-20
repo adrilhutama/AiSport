@@ -1,4 +1,4 @@
-export type LeagueCode = 'PL' | 'PD' | 'SA' | 'BL1' | 'FL1';
+export type LeagueCode = 'PL' | 'PD' | 'SA' | 'BL1' | 'FL1' | 'CL' | 'EL';
 
 export interface LeagueInfo {
   code: LeagueCode;
@@ -19,8 +19,10 @@ export interface Team {
   attack_rating: number;  // Relative attacking multiplier (1.0 = league average)
   defense_rating: number; // Relative defensive goals conceded multiplier (1.0 = average)
   form: string;           // e.g. "WWDLW"
-  crest_url?: string;     // Official SVG/PNG crest URL from Football-Data.org
+  crest_url?: string;     // Official SVG/PNG crest URL from Football-Data.org or Supabase CDN
   logo_url?: string;      // Alias for crest_url
+  rolling_xg?: number;    // Contextual rolling expected goals from API-Football
+  key_injuries_count?: number; // Number of key starters out
 }
 
 export interface MarketOdds {
@@ -34,6 +36,11 @@ export interface MarketOdds {
   handicap_odds?: Record<string, number>; // e.g. { 'home_-1.5': 2.60, 'away_+1.5': 1.52, 'home_-0.5': 1.75, 'away_+0.5': 2.10, ... }
   totals_odds?: Record<string, number>;   // e.g. { 'over_1.5': 1.25, 'under_1.5': 4.00, 'over_2.5': 1.85, 'under_2.5': 1.95, 'over_3.5': 3.10, 'under_3.5': 1.38 }
   btts_odds?: Record<string, number>;     // e.g. { 'btts_yes': 1.75, 'btts_no': 2.05 }
+  is_positive_ev?: boolean;              // Computed by Supabase trigger
+  ev_home?: number;
+  ev_draw?: number;
+  ev_away?: number;
+  max_ev?: number;
   updated_at?: string;
 }
 
