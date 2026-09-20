@@ -1,4 +1,5 @@
 import { LeagueCode, Team, MissingPlayer } from '@/types';
+import { findNormalizedTeamId, cleanTeamString } from '@/lib/team-matcher';
 
 /**
  * API-Sports / API-Football v3 Contextual Intelligence Service
@@ -24,85 +25,143 @@ export interface TeamContextData {
   avg_xg_against: number | null;
 }
 
+export interface InjuriesFetchResult {
+  success: boolean;
+  injuriesByTeam: Record<string, MissingPlayer[]>;
+  remainingQuota?: number;
+  totalInjuries: number;
+  seasonUsed?: number;
+}
+
 /**
  * Fetch active injuries for a given competition from API-Football v3
- * Calls: /injuries?league={leagueId}&season=2026
+ * Calls: /injuries?league={leagueId}&season={season}
+ * Automatically falls back to season 2025 if season 2026 returns 0 injuries.
  */
 export async function fetchLeagueInjuries(
   leagueCode: LeagueCode,
   season = 2026
-): Promise<{
-  success: boolean;
-  injuriesByTeam: Record<string, MissingPlayer[]>;
-  remainingQuota?: number;
-}> {
+): Promise<InjuriesFetchResult> {
   const apiKey =
     process.env.API_SPORTS_KEY ||
     process.env.APISPORTS_KEY ||
     process.env.API_FOOTBALL_KEY;
 
   if (!apiKey) {
-    return { success: false, injuriesByTeam: {} };
+    return { success: false, injuriesByTeam: {}, totalInjuries: 0 };
   }
 
   const leagueId = APISPORTS_LEAGUE_MAP[leagueCode];
   if (!leagueId) {
-    return { success: false, injuriesByTeam: {} };
+    return { success: false, injuriesByTeam: {}, totalInjuries: 0 };
   }
 
-  try {
-    const res = await fetch(
-      `https://v3.football.api-sports.io/injuries?league=${leagueId}&season=${season}`,
-      {
-        headers: { 'x-apisports-key': apiKey },
-        next: { revalidate: 3600 * 6 }, // Cache for 6 hours
-        signal: AbortSignal.timeout(6000),
-      }
-    );
-
-    const remainingHeader = res.headers.get('x-ratelimit-requests-remaining');
-    const remainingQuota = remainingHeader ? parseInt(remainingHeader, 10) : undefined;
-
-    // Explicit console logging as required by specification
-    console.log(`[API-Sports] Fetched injuries for league ${leagueId}. Requests remaining: ${remainingQuota ?? 'unspecified'}`);
-
-    if (remainingQuota !== undefined && remainingQuota < 20) {
-      console.warn(`[API-Sports] Remaining daily quota (${remainingQuota}) below 20 safeguard. Preserving quota.`);
-      return { success: false, injuriesByTeam: {}, remainingQuota };
-    }
-
-    if (!res.ok) {
-      console.warn(`[API-Sports] Injuries request for league ${leagueId} returned HTTP ${res.status}`);
-      return { success: false, injuriesByTeam: {}, remainingQuota };
-    }
-
-    const data = await res.json();
-    const injuries = data.response || [];
-    const injuriesByTeam: Record<string, MissingPlayer[]> = {};
-
-    for (const item of injuries) {
-      const teamName = item.team?.name?.toLowerCase().trim();
-      const playerName = item.player?.name || 'Unknown';
-      const position = item.player?.type || 'Starter';
-      const reason = item.player?.reason || 'Injury';
-
-      if (teamName) {
-        if (!injuriesByTeam[teamName]) {
-          injuriesByTeam[teamName] = [];
+  const querySeason = async (targetSeason: number) => {
+    try {
+      const res = await fetch(
+        `https://v3.football.api-sports.io/injuries?league=${leagueId}&season=${targetSeason}`,
+        {
+          headers: { 'x-apisports-key': apiKey },
+          next: { revalidate: 3600 * 6 }, // Cache for 6 hours
+          signal: AbortSignal.timeout(6000),
         }
-        injuriesByTeam[teamName].push({
-          name: playerName,
-          position,
-          reason,
-        });
+      );
+
+      const remainingHeader = res.headers.get('x-ratelimit-requests-remaining');
+      const remaining = remainingHeader ? parseInt(remainingHeader, 10) : undefined;
+
+      // Specification log output format
+      console.log(`[API-Sports] Syncing injuries for ${leagueCode}... Remaining: ${remaining ?? 'unspecified'}`);
+
+      if (remaining !== undefined && remaining < 20) {
+        console.warn(`[API-Sports] Remaining daily quota (${remaining}) below 20 safeguard. Preserving quota.`);
+        return { ok: false, data: null, remaining, quotaHalted: true };
+      }
+
+      if (!res.ok) {
+        console.warn(`[API-Sports] Injuries request for league ${leagueId} (season ${targetSeason}) returned HTTP ${res.status}`);
+        return { ok: false, data: null, remaining, quotaHalted: false };
+      }
+
+      const data = await res.json();
+      return { ok: true, data, remaining, quotaHalted: false };
+    } catch (err: any) {
+      console.warn(`[API-Sports] Request error for ${leagueCode} (season ${targetSeason}):`, err.message);
+      return { ok: false, data: null, remaining: undefined, quotaHalted: false };
+    }
+  };
+
+  let seasonUsed = season;
+  let queryRes = await querySeason(seasonUsed);
+
+  if (queryRes.quotaHalted) {
+    return {
+      success: false,
+      injuriesByTeam: {},
+      remainingQuota: queryRes.remaining,
+      totalInjuries: 0,
+      seasonUsed,
+    };
+  }
+
+  let responseList = queryRes.data?.response || [];
+
+  // Fallback: If season=2026 returns response: [], automatically fall back to season=2025
+  if (responseList.length === 0 && seasonUsed === 2026) {
+    console.log(`[API-Sports] Season 2026 returned empty injuries for ${leagueCode}. Falling back to season 2025...`);
+    seasonUsed = 2025;
+    const fallbackRes = await querySeason(seasonUsed);
+    if (fallbackRes.ok && fallbackRes.data?.response?.length > 0) {
+      queryRes = fallbackRes;
+      responseList = fallbackRes.data.response;
+    }
+  }
+
+  const injuriesByTeam: Record<string, MissingPlayer[]> = {};
+  let totalInjuries = 0;
+
+  for (const item of responseList) {
+    const rawTeamName = item.team?.name || '';
+    const normalizedId =
+      findNormalizedTeamId(rawTeamName, leagueCode) ||
+      cleanTeamString(rawTeamName);
+    const teamKey = rawTeamName.toLowerCase().trim();
+
+    const playerName = item.player?.name || 'Unknown';
+    const position = item.player?.type || 'Unknown';
+    const reason = item.player?.reason || 'Injured';
+
+    const playerObj: MissingPlayer = {
+      name: playerName,
+      position,
+      reason,
+    };
+
+    // Store under normalized ID
+    if (normalizedId) {
+      if (!injuriesByTeam[normalizedId]) injuriesByTeam[normalizedId] = [];
+      if (!injuriesByTeam[normalizedId].some((p) => p.name === playerName)) {
+        injuriesByTeam[normalizedId].push(playerObj);
+        totalInjuries++;
       }
     }
 
-    return { success: true, injuriesByTeam, remainingQuota };
-  } catch (err: any) {
-    console.warn(`[API-Sports] Error fetching injuries for league ${leagueId}:`, err.message);
-    return { success: false, injuriesByTeam: {} };
+    // Also store under raw team name key for fallback
+    if (teamKey && teamKey !== normalizedId) {
+      if (!injuriesByTeam[teamKey]) injuriesByTeam[teamKey] = [];
+      if (!injuriesByTeam[teamKey].some((p) => p.name === playerName)) {
+        injuriesByTeam[teamKey].push(playerObj);
+      }
+    }
   }
+
+  return {
+    success: true,
+    injuriesByTeam,
+    remainingQuota: queryRes.remaining,
+    totalInjuries,
+    seasonUsed,
+  };
 }
 
 /**

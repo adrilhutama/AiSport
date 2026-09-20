@@ -7,7 +7,7 @@ import { generateSyntheticMarketOdds } from '@/lib/synthetic-odds';
 import { uploadTeamCrestToSupabase } from '@/lib/storage';
 import { findNormalizedTeamId, cleanTeamString } from '@/lib/team-matcher';
 import { getTeamCrestUrl } from '@/lib/team-crests';
-import { enrichTeamsWithContext } from '@/lib/apisports';
+import { enrichTeamsWithContext, fetchLeagueInjuries } from '@/lib/apisports';
 
 export const ALL_SUPPORTED_LEAGUES: LeagueCode[] = ['PL', 'PD', 'SA', 'BL1', 'FL1', 'CL', 'EL'];
 
@@ -88,8 +88,239 @@ export interface PipelineSyncSummary {
 
 function parseTeamForm(rawForm?: string | null): string {
   if (!rawForm) return 'WDLWW';
-  const cleaned = rawForm.replace(/[^WDLwdl]/g, '').toUpperCase();
+  const cleaned = rawForm.replace(/,/g, '').replace(/[^WDLwdl]/g, '').toUpperCase();
   return cleaned.length > 0 ? cleaned.slice(-5) : 'WDLWW';
+}
+
+export interface StandingsTeamData {
+  teamId: string;
+  name: string;
+  shortName?: string;
+  form: string;
+  crestUrl?: string;
+  playedGames?: number;
+  points?: number;
+}
+
+/**
+ * Ingest official 5-match form from Football-Data.org Standings
+ * Endpoint: /v4/competitions/${leagueCode}/standings
+ * Normalizes "W,W,D,L,W" -> "WWDLL" and maps to normalized team ID and names.
+ */
+export async function fetchStandings(
+  leagueCode: LeagueCode
+): Promise<Map<string, StandingsTeamData>> {
+  const footballDataKey = process.env.FOOTBALL_DATA_API_KEY;
+  const compId = COMPETITION_IDS[leagueCode];
+  const standingsMap = new Map<string, StandingsTeamData>();
+
+  if (!footballDataKey || !compId) {
+    return standingsMap;
+  }
+
+  try {
+    const url = `https://api.football-data.org/v4/competitions/${compId}/standings`;
+    const res = await fetch(url, {
+      headers: { 'X-Auth-Token': footballDataKey },
+      next: { revalidate: 3600 },
+      signal: AbortSignal.timeout(6000),
+    });
+
+    if (!res.ok) {
+      console.warn(`[Standings] Football-Data standings for ${leagueCode} returned HTTP ${res.status}`);
+      return standingsMap;
+    }
+
+    const data = await res.json();
+    const tables = data.standings || [];
+    const totalStanding = tables.find((s: any) => s.type === 'TOTAL') || tables[0];
+    const rows = totalStanding?.table || [];
+
+    for (const row of rows) {
+      const rawTeamName = row.team?.name || '';
+      const shortName = row.team?.shortName || '';
+      const rawForm = row.form || '';
+
+      // Clean and normalize form: e.g. "W,W,D,L,W" -> "WWDLL"
+      const cleanedForm = rawForm
+        ? rawForm.replace(/,/g, '').replace(/[^WDLwdl]/g, '').toUpperCase().slice(-5)
+        : '';
+
+      const normalizedId =
+        findNormalizedTeamId(rawTeamName, leagueCode) ||
+        findNormalizedTeamId(shortName, leagueCode) ||
+        cleanTeamString(rawTeamName);
+
+      const teamData: StandingsTeamData = {
+        teamId: normalizedId,
+        name: rawTeamName,
+        shortName,
+        form: cleanedForm,
+        crestUrl: row.team?.crest || undefined,
+        playedGames: row.playedGames,
+        points: row.points,
+      };
+
+      if (normalizedId) {
+        standingsMap.set(normalizedId, teamData);
+      }
+      if (rawTeamName) {
+        standingsMap.set(rawTeamName.toLowerCase().trim(), teamData);
+      }
+      if (shortName) {
+        standingsMap.set(shortName.toLowerCase().trim(), teamData);
+      }
+    }
+
+    console.log(`[Standings] Synced real form from standings for ${leagueCode}: ${rows.length} teams mapped.`);
+  } catch (err: any) {
+    console.warn(`[Standings] Error fetching standings for ${leagueCode}:`, err.message);
+  }
+
+  return standingsMap;
+}
+
+export interface EnrichmentSummary {
+  league: LeagueCode;
+  teamsUpdated: number;
+  standingsCount: number;
+  injuriesCount: number;
+  seasonUsed?: number;
+  remainingQuota?: number;
+  teams: Array<{
+    id: string;
+    name: string;
+    form: string;
+    key_injuries_count: number;
+    missing_players: any[];
+  }>;
+  errors: string[];
+}
+
+/**
+ * Direct enrichment trigger: pulls real form from standings & live injuries from API-Sports
+ */
+export async function syncLeagueEnrichment(
+  leagueCode: LeagueCode
+): Promise<EnrichmentSummary> {
+  const supabase = createServerClient();
+  const errors: string[] = [];
+
+  // 1. Fetch real form from Football-Data.org Standings
+  const standingsMap = await fetchStandings(leagueCode);
+
+  // 2. Fetch live injuries from API-Sports v3 (with 2026 -> 2025 season fallback)
+  const { injuriesByTeam, remainingQuota, totalInjuries, seasonUsed } =
+    await fetchLeagueInjuries(leagueCode);
+
+  // 3. Retrieve teams for this league
+  let teams: Team[] = [];
+  if (supabase) {
+    const { data: dbTeams, error: dbErr } = await supabase
+      .from('teams')
+      .select('*')
+      .eq('league', leagueCode);
+    if (!dbErr && dbTeams && dbTeams.length > 0) {
+      teams = dbTeams as Team[];
+    }
+  }
+
+  // Fallback to MOCK_TEAMS if database has 0 teams for this league
+  if (teams.length === 0) {
+    teams = Object.values(MOCK_TEAMS).filter((t) => t.league === leagueCode);
+  }
+
+  // Also incorporate any teams discovered from the standings table
+  for (const [key, sTeam] of standingsMap.entries()) {
+    if (sTeam.teamId && !teams.some((t) => t.id === sTeam.teamId)) {
+      teams.push({
+        id: sTeam.teamId,
+        league: leagueCode,
+        name: sTeam.shortName || sTeam.name,
+        aliases: [sTeam.name],
+        attack_rating: 1.1,
+        defense_rating: 1.0,
+        form: sTeam.form || 'WDLWW',
+        crest_url: sTeam.crestUrl || getTeamCrestUrl(sTeam.teamId) || undefined,
+      });
+    }
+  }
+
+  // 4. Update each team with dynamic form from standings & injuries from API-Sports
+  const updatedTeams: Team[] = teams.map((team) => {
+    const teamKey = team.name.toLowerCase().trim();
+    const standingsData =
+      standingsMap.get(team.id) ||
+      standingsMap.get(teamKey) ||
+      (team.aliases && team.aliases.length > 0 ? standingsMap.get(team.aliases[0].toLowerCase().trim()) : undefined);
+
+    // Dynamic form from standings (do NOT fall back to static mock string if team in standings)
+    let dynamicForm = team.form;
+    if (standingsData && standingsData.form) {
+      dynamicForm = standingsData.form;
+    }
+
+    // Dynamic injuries from API-Sports
+    const missing = injuriesByTeam[team.id] || injuriesByTeam[teamKey] || [];
+    const missingPlayers = missing.length > 0 ? missing : (team.missing_players || []);
+    const injuryCount = missing.length > 0 ? missing.length : (team.key_injuries_count || 0);
+
+    return {
+      ...team,
+      form: dynamicForm,
+      missing_players: missingPlayers,
+      key_injuries_count: injuryCount,
+    };
+  });
+
+  // 5. Persist to Supabase
+  if (supabase && updatedTeams.length > 0) {
+    const payload = updatedTeams.map((t) => ({
+      id: t.id,
+      league: t.league,
+      name: t.name,
+      aliases: t.aliases || [],
+      attack_rating: t.attack_rating,
+      defense_rating: t.defense_rating,
+      form: t.form,
+      crest_url: t.crest_url || null,
+      rolling_xg: t.rolling_xg ?? null,
+      key_injuries_count: t.key_injuries_count ?? 0,
+      missing_players: t.missing_players || [],
+      avg_xg_for: t.avg_xg_for ?? null,
+      avg_xg_against: t.avg_xg_against ?? null,
+    }));
+
+    try {
+      const { error: upsertErr } = await supabase.from('teams').upsert(payload, { onConflict: 'id' });
+      if (upsertErr) {
+        console.warn('[Enrichment] Teams upsert fallback to base columns:', upsertErr.message);
+        const basePayload = payload.map(({ id, league, name, aliases, attack_rating, defense_rating, form }) => ({
+          id, league, name, aliases, attack_rating, defense_rating, form,
+        }));
+        await supabase.from('teams').upsert(basePayload, { onConflict: 'id' });
+      }
+    } catch (err: any) {
+      errors.push(`Enrichment upsert: ${err.message}`);
+    }
+  }
+
+  return {
+    league: leagueCode,
+    teamsUpdated: updatedTeams.length,
+    standingsCount: standingsMap.size,
+    injuriesCount: totalInjuries,
+    seasonUsed,
+    remainingQuota,
+    teams: updatedTeams.map((t) => ({
+      id: t.id,
+      name: t.name,
+      form: t.form,
+      key_injuries_count: t.key_injuries_count ?? 0,
+      missing_players: t.missing_players || [],
+    })),
+    errors,
+  };
 }
 
 /**
@@ -325,6 +556,9 @@ export async function syncFixturesAndTeams(options?: {
       const matches = data.matches || [];
       const leagueFixtures: Fixture[] = [];
 
+      // Fetch standings for real team form
+      const standingsMap = await fetchStandings(lg);
+
       for (const m of matches) {
         const homeId = findNormalizedTeamId(m.homeTeam.name, lg) || cleanTeamString(m.homeTeam.name);
         const awayId = findNormalizedTeamId(m.awayTeam.name, lg) || cleanTeamString(m.awayTeam.name);
@@ -346,6 +580,12 @@ export async function syncFixturesAndTeams(options?: {
           } catch {}
         }
 
+        const standingsHome = standingsMap.get(homeId) || standingsMap.get(m.homeTeam.name.toLowerCase().trim());
+        const standingsAway = standingsMap.get(awayId) || standingsMap.get(m.awayTeam.name.toLowerCase().trim());
+
+        const homeForm = (standingsHome && standingsHome.form) ? standingsHome.form : parseTeamForm(m.homeTeam.form);
+        const awayForm = (standingsAway && standingsAway.form) ? standingsAway.form : parseTeamForm(m.awayTeam.form);
+
         const homeTeamObj: Team = {
           id: homeId,
           league: lg,
@@ -353,7 +593,7 @@ export async function syncFixturesAndTeams(options?: {
           aliases: [m.homeTeam.name],
           attack_rating: 1.2,
           defense_rating: 0.9,
-          form: parseTeamForm(m.homeTeam.form),
+          form: homeForm,
           crest_url: homeCrest,
         };
 
@@ -364,7 +604,7 @@ export async function syncFixturesAndTeams(options?: {
           aliases: [m.awayTeam.name],
           attack_rating: 1.1,
           defense_rating: 1.0,
-          form: parseTeamForm(m.awayTeam.form),
+          form: awayForm,
           crest_url: awayCrest,
         };
 

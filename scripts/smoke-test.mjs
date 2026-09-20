@@ -154,6 +154,22 @@ async function runSmokeTests() {
     const cacheControl = liveRes.headers.get('cache-control');
     console.log(`   ✅ Live Score API returned success (${liveData.matches.length} active live matches, next kickoff: ${liveData.nextKickoff || 'N/A'}, cache: ${cacheControl}).`);
 
+    // 6. Test Enrichment API Route
+    console.log('\n6. Testing Enrichment API (/api/sync/enrichment?league=PL)...');
+    const enrichRes = await fetch(`${BASE_URL}/api/sync/enrichment?league=PL`);
+    if (!enrichRes.ok) {
+      throw new Error(`Enrichment API returned HTTP status ${enrichRes.status}`);
+    }
+    const enrichData = await enrichRes.json();
+    if (!enrichData.success || !Array.isArray(enrichData.teams) || enrichData.teams.length === 0) {
+      throw new Error('Enrichment API response structure is invalid or returned 0 teams');
+    }
+    const firstTeam = enrichData.teams[0];
+    if (!firstTeam.id || !firstTeam.name || typeof firstTeam.form !== 'string' || typeof firstTeam.key_injuries_count !== 'number') {
+      throw new Error('Enriched team payload missing id, name, form, or key_injuries_count');
+    }
+    console.log(`   ✅ Enrichment API returned success (${enrichData.teams.length} teams enriched for ${enrichData.league}, standings: ${enrichData.standings_synced}, injuries: ${enrichData.injuries_count}).`);
+
     console.log('\n🎉 All smoke tests passed successfully!');
   } catch (err) {
     console.error(`\n❌ Smoke test failure:`, err.message);

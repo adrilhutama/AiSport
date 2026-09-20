@@ -197,5 +197,22 @@ test.describe('OddsMatrix End-to-End Suite', () => {
     // Verify empty state is rendered cleanly for Europa League
     await expect(page.locator('text=Tidak ada pertandingan Europa League pekan ini. Matchday berikutnya berlangsung pada Oktober.')).toBeVisible();
   });
+
+  test('API Route: Immediate Refresh (/api/sync/enrichment) returns structured form and injuries', async ({ request }) => {
+    const response = await request.get('/api/sync/enrichment?league=PL');
+    expect(response.ok()).toBeTruthy();
+    const data = await response.json();
+    expect(data.success).toBe(true);
+    expect(data.league).toBe('PL');
+    expect(data.teams_count).toBeGreaterThan(0);
+    expect(Array.isArray(data.teams)).toBe(true);
+    const firstTeam = data.teams[0];
+    expect(firstTeam).toHaveProperty('id');
+    expect(firstTeam).toHaveProperty('name');
+    expect(firstTeam).toHaveProperty('form');
+    expect(firstTeam).toHaveProperty('key_injuries_count');
+    expect(firstTeam).toHaveProperty('missing_players');
+  });
 });
+
 
