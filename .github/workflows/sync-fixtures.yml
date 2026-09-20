@@ -1,0 +1,29 @@
+name: Sync Weekly Fixtures
+
+on:
+  schedule:
+    - cron: '0 4 * * *' # Run once daily at 04:00 UTC (11:00 WIB)
+  workflow_dispatch:   # Enables manual trigger from GitHub UI
+
+jobs:
+  sync-fixtures:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Fixtures Sync by League
+        run: |
+          RAW_URL="${{ secrets.SITE_URL || secrets.VERCEL_APP_URL }}"
+          TARGET_URL=$(echo "$RAW_URL" | sed -e 's|^https://||' -e 's|/$||')
+          
+          if [ -z "$TARGET_URL" ]; then
+            echo "Error: Neither SITE_URL nor VERCEL_APP_URL secret is set."
+            exit 1
+          fi
+
+          echo "Starting daily rolling 7-day fixtures sync for European competitions..."
+          for league in PL PD SA BL1 FL1 CL EL; do
+            echo "Syncing fixtures and crests for $league..."
+            curl -m 30 -f -sS "https://$TARGET_URL/api/sync/fixtures?league=$league" \
+              -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" || echo "Warning: $league sync encountered an issue, proceeding to next league."
+            sleep 3
+          done
+          echo "Daily fixtures ingestion completed."

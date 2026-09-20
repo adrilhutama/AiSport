@@ -1,0 +1,30 @@
+name: Sync Market Odds
+
+on:
+  schedule:
+    # Matchday windows: Sun, Tue, Wed, Thu, Fri, Sat every 4 hours
+    - cron: '0 */4 * * 0,2,3,4,5,6'
+  workflow_dispatch: # Enables manual trigger from GitHub UI
+
+jobs:
+  sync-odds:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Fast Market Odds Sync
+        run: |
+          RAW_URL="${{ secrets.SITE_URL || secrets.VERCEL_APP_URL }}"
+          TARGET_URL=$(echo "$RAW_URL" | sed -e 's|^https://||' -e 's|/$||')
+          
+          if [ -z "$TARGET_URL" ]; then
+            echo "Error: Neither SITE_URL nor VERCEL_APP_URL secret is set."
+            exit 1
+          fi
+
+          echo "Triggering fast market odds synchronization (next 48-72h matches)..."
+          curl -m 30 -f -sS "https://$TARGET_URL/api/sync/odds" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" || {
+              echo "Global odds sync failed, falling back to domestic and European matchday sync..."
+              curl -m 30 -f -sS "https://$TARGET_URL/api/sync/odds?league=PL" -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" || true
+              curl -m 30 -f -sS "https://$TARGET_URL/api/sync/odds?league=CL" -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" || true
+            }
+          echo "Market odds sync completed."

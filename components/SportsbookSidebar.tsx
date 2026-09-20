@@ -102,9 +102,22 @@ export const SportsbookSidebar: React.FC<SportsbookSidebarProps> = ({
                 }`}
               >
                 <div className="flex items-center gap-2 truncate">
-                  <span className="text-base leading-none shrink-0" title={lg.country}>
-                    {lg.flag}
-                  </span>
+                  {lg.emblem ? (
+                    <div className="w-5 h-5 rounded flex items-center justify-center bg-slate-950 border border-slate-800 shrink-0 p-0.5 overflow-hidden" title={`${lg.name} Official Badge`}>
+                      <img
+                        src={lg.emblem}
+                        alt={`${lg.name} badge`}
+                        className="w-full h-full object-contain"
+                        onError={(e) => {
+                          (e.currentTarget as HTMLElement).style.display = 'none';
+                        }}
+                      />
+                    </div>
+                  ) : (
+                    <span className="text-base leading-none shrink-0" title={lg.country}>
+                      {lg.flag}
+                    </span>
+                  )}
                   <div className="text-left truncate">
                     <span className="block truncate font-medium">{lg.name}</span>
                     <span className="block text-[10px] text-slate-500 font-mono -mt-0.5 truncate">
