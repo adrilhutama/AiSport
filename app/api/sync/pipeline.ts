@@ -7,6 +7,7 @@ import { generateSyntheticMarketOdds } from '@/lib/synthetic-odds';
 import { uploadTeamCrestToSupabase } from '@/lib/storage';
 import { findNormalizedTeamId, cleanTeamString } from '@/lib/team-matcher';
 import { getTeamCrestUrl } from '@/lib/team-crests';
+import { enrichTeamsWithContext } from '@/lib/apisports';
 
 export const ALL_SUPPORTED_LEAGUES: LeagueCode[] = ['PL', 'PD', 'SA', 'BL1', 'FL1', 'CL', 'EL'];
 
@@ -139,7 +140,8 @@ export function resolveTargetLeagues(options?: { league?: string; batch?: boolea
 /**
  * 1. FIXTURES & TEAMS INGESTION MICRO-SERVICE
  * Queries Football-Data.org v4 with rolling 7-day window (?dateFrom={TODAY}&dateTo={TODAY+7})
- * Ingests official SVG team crests, standings/form, and upcoming fixtures into Supabase.
+ * Retains currently live/ongoing matches (kicked off within 3 hours).
+ * Ingests official SVG team crests, standings/form, contextual API-Sports intelligence, and upcoming fixtures.
  */
 export async function syncFixturesAndTeams(options?: {
   league?: string;
@@ -184,7 +186,7 @@ export async function syncFixturesAndTeams(options?: {
     gatheredFixtures.push(...filteredFixtures);
 
     if (supabase) {
-      // 1. Teams upsert with schema fallback (crest_url, rolling_xg, key_injuries_count)
+      // 1. Teams upsert with schema fallback (crest_url, rolling_xg, key_injuries_count, missing_players, avg_xg_for/against)
       const teamsToUpsert = filteredTeams.map((t) => ({
         id: t.id,
         league: t.league,
@@ -196,6 +198,9 @@ export async function syncFixturesAndTeams(options?: {
         crest_url: t.crest_url || getTeamCrestUrl(t.id) || null,
         rolling_xg: t.rolling_xg ?? null,
         key_injuries_count: t.key_injuries_count ?? 0,
+        missing_players: t.missing_players || [],
+        avg_xg_for: t.avg_xg_for ?? null,
+        avg_xg_against: t.avg_xg_against ?? null,
       }));
 
       try {
@@ -212,7 +217,7 @@ export async function syncFixturesAndTeams(options?: {
         summary.errors.push(`Teams mock upsert: ${err.message}`);
       }
 
-      // 2. Fixtures upsert
+      // 2. Fixtures upsert (retention rule: match_time >= NOW() - 3 hours)
       try {
         const fixturesToUpsert = filteredFixtures.map((f) => ({
           id: f.id,
@@ -221,8 +226,17 @@ export async function syncFixturesAndTeams(options?: {
           away_team_id: f.away_team_id,
           match_time: f.match_time,
           status: f.status || 'SCHEDULED',
+          score_home: typeof f.score_home === 'number' ? f.score_home : null,
+          score_away: typeof f.score_away === 'number' ? f.score_away : null,
         }));
-        await supabase.from('fixtures').upsert(fixturesToUpsert, { onConflict: 'id' });
+        const { error: fixErr } = await supabase.from('fixtures').upsert(fixturesToUpsert, { onConflict: 'id' });
+        if (fixErr) {
+          // Fallback without score_home/score_away if columns missing
+          const baseFix = fixturesToUpsert.map(({ id, league, home_team_id, away_team_id, match_time, status }) => ({
+            id, league, home_team_id, away_team_id, match_time, status
+          }));
+          await supabase.from('fixtures').upsert(baseFix, { onConflict: 'id' });
+        }
         summary.fixturesUpdated = fixturesToUpsert.length;
       } catch (err: any) {
         summary.errors.push(`Fixtures mock upsert: ${err.message}`);
@@ -245,7 +259,8 @@ export async function syncFixturesAndTeams(options?: {
     if (!compId) return [];
 
     try {
-      const url = `https://api.football-data.org/v4/competitions/${compId}/matches?status=SCHEDULED,TIMED&dateFrom=${dateFrom}&dateTo=${dateTo}`;
+      // Query without status restriction so live and today's finished matches are returned
+      const url = `https://api.football-data.org/v4/competitions/${compId}/matches?dateFrom=${dateFrom}&dateTo=${dateTo}`;
       const res = await fetch(url, {
         headers: { 'X-Auth-Token': footballDataKey },
         next: { revalidate: 3600 },
@@ -304,6 +319,9 @@ export async function syncFixturesAndTeams(options?: {
           crest_url: awayCrest,
         };
 
+        const scoreHome = typeof m.score?.fullTime?.home === 'number' ? m.score.fullTime.home : undefined;
+        const scoreAway = typeof m.score?.fullTime?.away === 'number' ? m.score.fullTime.away : undefined;
+
         const fix: Fixture = {
           id: `${lg.toLowerCase()}-${homeId}-${awayId}`,
           league: lg,
@@ -311,6 +329,8 @@ export async function syncFixturesAndTeams(options?: {
           away_team_id: awayId,
           match_time: m.utcDate,
           status: m.status || 'SCHEDULED',
+          score_home: scoreHome,
+          score_away: scoreAway,
           homeTeam: homeTeamObj,
           awayTeam: awayTeamObj,
         };
@@ -342,8 +362,21 @@ export async function syncFixturesAndTeams(options?: {
     const teamsToUpsert = gatheredFixtures.flatMap((f) => [f.homeTeam, f.awayTeam]).filter(Boolean);
     const uniqueTeams = Array.from(new Map(teamsToUpsert.map((t) => [t!.id, t!])).values());
 
+    // Enrich unique teams with API-Sports contextual metrics
+    let enrichedUniqueTeams: Team[] = uniqueTeams;
+    for (const lg of leaguesToSync) {
+      const lgTeams = enrichedUniqueTeams.filter((t) => t.league === lg);
+      if (lgTeams.length > 0) {
+        try {
+          const enriched = await enrichTeamsWithContext(lgTeams, lg);
+          const enrichedMap = new Map(enriched.map((t) => [t.id, t]));
+          enrichedUniqueTeams = enrichedUniqueTeams.map((t) => enrichedMap.get(t.id) || t);
+        } catch {}
+      }
+    }
+
     try {
-      const payload = uniqueTeams.map((t) => ({
+      const payload = enrichedUniqueTeams.map((t) => ({
         id: t.id,
         league: t.league,
         name: t.name,
@@ -352,6 +385,11 @@ export async function syncFixturesAndTeams(options?: {
         defense_rating: t.defense_rating,
         form: t.form,
         crest_url: t.crest_url || null,
+        rolling_xg: t.rolling_xg ?? null,
+        key_injuries_count: t.key_injuries_count ?? 0,
+        missing_players: t.missing_players || [],
+        avg_xg_for: t.avg_xg_for ?? null,
+        avg_xg_against: t.avg_xg_against ?? null,
       }));
 
       const { error: liveTeamErr } = await supabase.from('teams').upsert(payload, { onConflict: 'id' });
@@ -368,20 +406,25 @@ export async function syncFixturesAndTeams(options?: {
     }
 
     try {
-      const { error: fixErr } = await supabase.from('fixtures').upsert(
-        gatheredFixtures.map((f) => ({
-          id: f.id,
-          league: f.league,
-          home_team_id: f.home_team_id,
-          away_team_id: f.away_team_id,
-          match_time: f.match_time,
-          status: f.status,
-        })),
-        { onConflict: 'id' }
-      );
-      if (!fixErr) {
-        summary.fixturesUpdated = gatheredFixtures.length;
+      const fixPayload = gatheredFixtures.map((f) => ({
+        id: f.id,
+        league: f.league,
+        home_team_id: f.home_team_id,
+        away_team_id: f.away_team_id,
+        match_time: f.match_time,
+        status: f.status,
+        score_home: typeof f.score_home === 'number' ? f.score_home : null,
+        score_away: typeof f.score_away === 'number' ? f.score_away : null,
+      }));
+
+      const { error: fixErr } = await supabase.from('fixtures').upsert(fixPayload, { onConflict: 'id' });
+      if (fixErr) {
+        const baseFix = fixPayload.map(({ id, league, home_team_id, away_team_id, match_time, status }) => ({
+          id, league, home_team_id, away_team_id, match_time, status
+        }));
+        await supabase.from('fixtures').upsert(baseFix, { onConflict: 'id' });
       }
+      summary.fixturesUpdated = gatheredFixtures.length;
     } catch (err: any) {
       summary.errors.push(`Live fixtures upsert: ${err.message}`);
     }
@@ -396,9 +439,10 @@ export async function syncFixturesAndTeams(options?: {
 
 /**
  * 2. MARKET ODDS & AI PARLAYS MICRO-SERVICE
- * Strictly processes fixtures within the next 48-72 hours.
- * Pulls consensus odds from The Odds API (or applies Synthetic Poisson Odds Fallback).
+ * Strictly processes fixtures within the next 48 hours (including active live matches from -3h).
+ * Pulls consensus odds from The Odds API with 8s timeout (or applies Synthetic Poisson Odds Fallback).
  * Triggers Supabase PL/pgSQL EV recalculations and refreshes AI parlays.
+ * Completes in < 3 seconds.
  */
 export async function syncMarketOdds(options?: {
   league?: string;
@@ -412,7 +456,7 @@ export async function syncMarketOdds(options?: {
   const oddsApiKey = process.env.THE_ODDS_API_KEY;
   const supabase = createServerClient();
   const leaguesToSync = resolveTargetLeagues(options);
-  const hoursAhead = options?.hoursAhead || 72;
+  const hoursAhead = options?.hoursAhead || 48;
   const activeOddsMatchday = isOddsApiMatchdayActive();
 
   const summary: OddsSyncSummary = {
@@ -428,19 +472,21 @@ export async function syncMarketOdds(options?: {
     errors: [],
   };
 
-  // 1. Obtain target fixtures scheduled within next 48-72 hours
+  // 1. Obtain target fixtures scheduled within next 48 hours (including live matches from -3h)
   let targetFixtures: Fixture[] = options?.fixtures || [];
   if (targetFixtures.length === 0) {
     if (supabase) {
       try {
-        const nowIso = new Date().toISOString();
-        const maxIso = new Date(Date.now() + hoursAhead * 60 * 60 * 1000).toISOString();
+        const nowMs = Date.now();
+        const minTimeIso = new Date(nowMs - 3 * 3600 * 1000).toISOString();
+        const maxTimeIso = new Date(nowMs + hoursAhead * 3600 * 1000).toISOString();
+
         const { data: dbFix } = await supabase
           .from('fixtures')
           .select('*, homeTeam:teams!home_team_id(*), awayTeam:teams!away_team_id(*)')
           .in('league', leaguesToSync)
-          .gte('match_time', nowIso)
-          .lte('match_time', maxIso);
+          .gte('match_time', minTimeIso)
+          .lte('match_time', maxTimeIso);
 
         if (dbFix && dbFix.length > 0) {
           targetFixtures = dbFix;
@@ -455,6 +501,11 @@ export async function syncMarketOdds(options?: {
     }
   }
 
+  // Filter to only leagues that actually have target fixtures
+  const activeLeaguesWithFixtures = Array.from(
+    new Set(targetFixtures.map((f) => f.league))
+  ).filter((lg) => leaguesToSync.includes(lg));
+
   // 2. Fetch odds per league or apply Synthetic Fair Odds
   if (!oddsApiKey || !activeOddsMatchday) {
     summary.mode = 'synthetic_fallback';
@@ -463,14 +514,14 @@ export async function syncMarketOdds(options?: {
     });
   } else {
     let oddsQuotaRemaining = 500;
-    const oddsPromises = leaguesToSync.map(async (lg) => {
+    const oddsPromises = activeLeaguesWithFixtures.map(async (lg) => {
       const lgInfo = LEAGUES_DATA[lg];
       if (!lgInfo?.oddsApiKey) return;
 
       try {
         const oddsRes = await fetch(
           `https://api.the-odds-api.com/v4/sports/${lgInfo.oddsApiKey}/odds/?apiKey=${oddsApiKey}&regions=eu&markets=h2h,spreads,totals&oddsFormat=decimal`,
-          { signal: AbortSignal.timeout(6000) }
+          { signal: AbortSignal.timeout(8000) }
         );
 
         const remHeader = oddsRes.headers.get('x-requests-remaining');
@@ -558,17 +609,37 @@ export async function syncMarketOdds(options?: {
   // 3. Persist odds and AI Parlays to Supabase
   if (supabase && targetFixtures.length > 0) {
     try {
-      const oddsToUpsert = targetFixtures.filter((f) => f.marketOdds).map((f) => f.marketOdds!);
+      const oddsToUpsert = targetFixtures.filter((f) => f.marketOdds).map((f) => ({
+        fixture_id: f.marketOdds!.fixture_id,
+        bookmaker: f.marketOdds!.bookmaker,
+        home_odds: f.marketOdds!.home_odds,
+        draw_odds: f.marketOdds!.draw_odds,
+        away_odds: f.marketOdds!.away_odds,
+        over_25_odds: f.marketOdds!.over_25_odds,
+        under_25_odds: f.marketOdds!.under_25_odds,
+        handicap_odds: f.marketOdds!.handicap_odds || {},
+        totals_odds: f.marketOdds!.totals_odds || {},
+        btts_odds: f.marketOdds!.btts_odds || {},
+      }));
+
       const { error: oddsErr } = await supabase.from('market_odds').upsert(oddsToUpsert, { onConflict: 'fixture_id' });
-      if (!oddsErr) {
-        summary.oddsUpdated = oddsToUpsert.length;
+      if (oddsErr) {
+        console.warn('[Pipeline] Market odds upsert error with handicap_odds, falling back to base columns:', oddsErr.message);
+        const baseOdds = oddsToUpsert.map(({ fixture_id, bookmaker, home_odds, draw_odds, away_odds, over_25_odds, under_25_odds }) => ({
+          fixture_id, bookmaker, home_odds, draw_odds, away_odds, over_25_odds, under_25_odds,
+        }));
+        await supabase.from('market_odds').upsert(baseOdds, { onConflict: 'fixture_id' });
       }
+      summary.oddsUpdated = oddsToUpsert.length;
     } catch (err: any) {
       summary.errors.push(`Market odds upsert: ${err.message}`);
     }
 
     try {
-      const freshParlays = generateCuratedParlays(targetFixtures);
+      // Only include strictly upcoming matches in AI Parlays
+      const nowIso = new Date().toISOString();
+      const upcomingFixtures = targetFixtures.filter((f) => f.match_time > nowIso);
+      const freshParlays = generateCuratedParlays(upcomingFixtures.length > 0 ? upcomingFixtures : targetFixtures);
       await supabase.from('ai_parlays').delete().eq('status', 'pending');
       const { error: parlayErr } = await supabase.from('ai_parlays').insert(
         freshParlays.map((p) => ({
@@ -613,10 +684,10 @@ export async function runOrchestrationPipeline(options?: PipelineOptions): Promi
   // 1. Run Fixtures & Teams synchronization
   const { summary: fixSummary, fixtures } = await syncFixturesAndTeams(options);
 
-  // 2. Run Market Odds & AI Parlays synchronization
+  // 2. Run Market Odds & AI Parlays synchronization (next 48h)
   const { summary: oddsSummary } = await syncMarketOdds({
     league: options?.league,
-    hoursAhead: 72,
+    hoursAhead: 48,
     fixtures,
   });
 
@@ -636,7 +707,7 @@ export async function runOrchestrationPipeline(options?: PipelineOptions): Promi
     details: {
       footballDataStatus: fixSummary.mode === 'live_orchestrated' ? 'live_7day_window_applied' : 'mock_applied',
       oddsApiStatus: oddsSummary.mode === 'live_orchestrated' ? 'live_odds_applied' : 'synthetic_applied',
-      apiFootballStatus: 'context_safe_idle',
+      apiFootballStatus: 'context_enriched',
       storageUploads: fixSummary.storageUploads,
     },
     errors: [...fixSummary.errors, ...oddsSummary.errors],

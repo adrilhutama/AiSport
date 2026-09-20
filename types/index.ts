@@ -23,6 +23,9 @@ export interface Team {
   logo_url?: string;      // Alias for crest_url
   rolling_xg?: number;    // Contextual rolling expected goals from API-Football
   key_injuries_count?: number; // Number of key starters out
+  missing_players?: string[]; // Array of key missing players from API-Football
+  avg_xg_for?: number;        // Rolling expected goals scored
+  avg_xg_against?: number;    // Rolling expected goals conceded
 }
 
 export interface MarketOdds {
@@ -50,7 +53,10 @@ export interface Fixture {
   home_team_id: string;
   away_team_id: string;
   match_time: string;
-  status: 'SCHEDULED' | 'TIMED' | 'IN_PLAY' | 'FINISHED';
+  status: 'SCHEDULED' | 'TIMED' | 'IN_PLAY' | 'PAUSED' | 'FINISHED';
+  score_home?: number;
+  score_away?: number;
+  settled_at?: string;
   homeTeam?: Team;
   awayTeam?: Team;
   marketOdds?: MarketOdds;
