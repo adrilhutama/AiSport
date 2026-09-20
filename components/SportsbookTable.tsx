@@ -280,13 +280,72 @@ export const SportsbookTable: React.FC<SportsbookTableProps> = ({
         </div>
       )}
 
+      {filteredFixtures.length === 0 && selectedLeague !== 'CL' && selectedLeague !== 'EL' && (
+        <div className="bg-slate-900/90 border border-slate-800/90 rounded-xl p-8 text-center space-y-3">
+          <div className="w-12 h-12 rounded-full bg-slate-800/80 border border-slate-700/60 flex items-center justify-center mx-auto text-xl">
+            ⚽
+          </div>
+          <h3 className="text-white font-bold text-sm">
+            Tidak ada pertandingan terjadwal untuk kompetisi ini saat ini.
+          </h3>
+          <p className="text-xs text-slate-400 font-mono">
+            Jadwal resmi terkalibrasi langsung dari Football-Data.org.
+          </p>
+        </div>
+      )}
+
       {/* Main Unified Horizontal Odds Board by League */}
       {leagueOrder.map((code) => {
         const leagueFixtures = groupedFixtures[code] || [];
-        if (leagueFixtures.length === 0) return null;
-
         const leagueInfo = LEAGUES_DATA[code as keyof typeof LEAGUES_DATA];
         const isCollapsed = collapsedLeagues.has(code);
+
+        if (leagueFixtures.length === 0) {
+          if (code === 'CL' || code === 'EL') {
+            return (
+              <div
+                key={code}
+                className="bg-slate-900/90 border border-slate-800/90 rounded-xl overflow-hidden shadow-md"
+              >
+                <div
+                  onClick={() => toggleCollapseLeague(code)}
+                  className="w-full flex items-center justify-between px-3 sm:px-4 py-2.5 bg-slate-950/80 hover:bg-slate-900 border-b border-slate-800/80 transition-colors text-left select-none cursor-pointer"
+                >
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <span className="text-lg leading-none shrink-0" title={leagueInfo.country}>
+                      {leagueInfo.flag}
+                    </span>
+                    <div className="flex items-center gap-2 truncate">
+                      <h3 className="font-bold text-white text-xs sm:text-sm tracking-tight truncate">
+                        {leagueInfo.country} • {leagueInfo.name}
+                      </h3>
+                      <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700">
+                        0 Matches
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-3 text-slate-400">
+                    {isCollapsed ? (
+                      <ChevronDown className="w-4 h-4 text-slate-400" />
+                    ) : (
+                      <ChevronUp className="w-4 h-4 text-slate-400" />
+                    )}
+                  </div>
+                </div>
+
+                {!isCollapsed && (
+                  <div className="p-6 text-center text-xs font-mono text-slate-400 bg-slate-950/40">
+                    {code === 'CL'
+                      ? 'Tidak ada pertandingan Champions League pekan ini. Matchday berikutnya berlangsung pada Oktober.'
+                      : 'Tidak ada pertandingan Europa League pekan ini. Matchday berikutnya berlangsung pada Oktober.'}
+                  </div>
+                )}
+              </div>
+            );
+          }
+          return null;
+        }
 
         return (
           <div

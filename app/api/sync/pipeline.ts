@@ -173,8 +173,17 @@ export async function syncFixturesAndTeams(options?: {
 
   const gatheredFixtures: Fixture[] = [];
 
-  // If API key is missing, use curated mock fixtures filtered to target leagues
+  // If API key is missing, gate mock fixtures fallback strictly to development/test
   if (!footballDataKey) {
+    if (process.env.NODE_ENV === 'production' && process.env.NEXT_PUBLIC_SUPABASE_URL) {
+      console.warn('[Pipeline] In production without footballDataKey: returning clean empty fixtures.');
+      return {
+        success: true,
+        summary,
+        fixtures: [],
+      };
+    }
+
     let filteredTeams = leaguesToSync.length === ALL_SUPPORTED_LEAGUES.length
       ? Object.values(MOCK_TEAMS)
       : Object.values(MOCK_TEAMS).filter((t) => leaguesToSync.includes(t.league));
@@ -280,13 +289,32 @@ export async function syncFixturesAndTeams(options?: {
     if (!compId) return [];
 
     try {
-      // Query without status restriction so live and today's finished matches are returned
-      const url = `https://api.football-data.org/v4/competitions/${compId}/matches?dateFrom=${dateFrom}&dateTo=${dateTo}`;
-      const res = await fetch(url, {
+      // Domestic leagues: 7-day window.
+      // Continental competitions (CL, EL): multi-week intervals, check up to 30 days ahead or scheduled matches
+      let url = `https://api.football-data.org/v4/competitions/${compId}/matches?dateFrom=${dateFrom}&dateTo=${dateTo}`;
+      if (lg === 'CL' || lg === 'EL') {
+        const extendedDateTo = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+        url = `https://api.football-data.org/v4/competitions/${compId}/matches?dateFrom=${dateFrom}&dateTo=${extendedDateTo}`;
+      }
+
+      let res = await fetch(url, {
         headers: { 'X-Auth-Token': footballDataKey },
         next: { revalidate: 3600 },
         signal: AbortSignal.timeout(6000),
       });
+
+      if (!res.ok && (lg === 'CL' || lg === 'EL')) {
+        // Fallback query for continental upcoming scheduled matches
+        const schedUrl = `https://api.football-data.org/v4/competitions/${compId}/matches?status=SCHEDULED`;
+        const schedRes = await fetch(schedUrl, {
+          headers: { 'X-Auth-Token': footballDataKey },
+          next: { revalidate: 3600 },
+          signal: AbortSignal.timeout(6000),
+        });
+        if (schedRes.ok) {
+          res = schedRes;
+        }
+      }
 
       if (!res.ok) {
         summary.errors.push(`Football-Data ${lg}: HTTP ${res.status}`);
@@ -371,11 +399,12 @@ export async function syncFixturesAndTeams(options?: {
     }
   }
 
-  // Fallback to mock fixtures if no live upcoming matches were found in the 7-day window
-  if (gatheredFixtures.length === 0) {
-    console.warn('[Pipeline] Zero live matches in 7-day window, applying mock fallback for target leagues.');
+  // Fallback to mock fixtures ONLY in development or offline mode without Supabase
+  const isDev = process.env.NODE_ENV === 'development' || !process.env.NEXT_PUBLIC_SUPABASE_URL;
+  if (gatheredFixtures.length === 0 && isDev) {
+    console.warn('[Pipeline] Zero live matches in window, applying development mock fallback for target leagues.');
     const fallback = MOCK_FIXTURES.filter((f) => leaguesToSync.includes(f.league));
-    gatheredFixtures.push(...(fallback.length > 0 ? fallback : MOCK_FIXTURES));
+    gatheredFixtures.push(...(fallback.length > 0 ? fallback : []));
   }
 
   // Supabase persist

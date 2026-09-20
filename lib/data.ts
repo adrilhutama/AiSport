@@ -12,6 +12,14 @@ export async function getOddsMatrixData(): Promise<{
   const supabase = createServerClient();
 
   if (!supabase) {
+    if (process.env.NODE_ENV === 'production' && process.env.NEXT_PUBLIC_SUPABASE_URL) {
+      return {
+        fixtures: [],
+        parlays: [],
+        source: 'supabase',
+      };
+    }
+
     const activeFixtures = MOCK_FIXTURES.filter((f) => {
       const isLiveOrUpcoming = ['SCHEDULED', 'TIMED', 'IN_PLAY', 'PAUSED', 'HALFTIME'].includes(f.status || 'SCHEDULED');
       const isRecentOrFuture = new Date(f.match_time).getTime() >= Date.now() - 3 * 3600 * 1000;
@@ -102,8 +110,15 @@ export async function getOddsMatrixData(): Promise<{
     const odds = (oddsRes.data as MarketOdds[]) || [];
     const parlaysRaw = (parlaysRes.data as any[]) || [];
 
-    // If no fixtures in Supabase, fall back to mock data
+    // If no fixtures in Supabase, fall back to mock data only in development
     if (fixturesRaw.length === 0) {
+      if (process.env.NODE_ENV === 'production') {
+        return {
+          fixtures: [],
+          parlays: [],
+          source: 'supabase',
+        };
+      }
       const fixtures = MOCK_FIXTURES.map(f => ({
         ...f,
         quantAnalysis: analyzeFixtureQuant(f),

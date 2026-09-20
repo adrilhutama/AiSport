@@ -173,4 +173,29 @@ test.describe('OddsMatrix End-to-End Suite', () => {
     expect(data.summary.leaguesProcessed).toContain('PL');
     expect(data.summary.fixturesUpdated).toBeGreaterThan(0);
   });
+
+  test('European Competitions: Clean empty state rendered for Champions League and Europa League', async ({ page }) => {
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
+
+    // Switch to Match Builder
+    const builderTab = page.locator('button:has-text("Match Builder")');
+    await builderTab.click();
+
+    // Click Champions League in sidebar
+    const clBtn = page.locator('button:has-text("Champions League")');
+    await expect(clBtn).toBeVisible();
+    await clBtn.click();
+
+    // Verify empty state is rendered cleanly with exact copy
+    await expect(page.locator('text=Tidak ada pertandingan Champions League pekan ini. Matchday berikutnya berlangsung pada Oktober.')).toBeVisible();
+
+    // Click Europa League in sidebar
+    const elBtn = page.locator('button:has-text("Europa League")');
+    await expect(elBtn).toBeVisible();
+    await elBtn.click();
+
+    // Verify empty state is rendered cleanly for Europa League
+    await expect(page.locator('text=Tidak ada pertandingan Europa League pekan ini. Matchday berikutnya berlangsung pada Oktober.')).toBeVisible();
+  });
 });
+
