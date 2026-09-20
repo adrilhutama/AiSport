@@ -92,6 +92,67 @@ function parseTeamForm(rawForm?: string | null): string {
   return cleaned.length > 0 ? cleaned.slice(-5) : 'WDLWW';
 }
 
+export interface CompletedMatchRecord {
+  id?: string;
+  home_team_id: string;
+  away_team_id: string;
+  score_home?: number | null;
+  score_away?: number | null;
+  match_time: string;
+  status?: string;
+}
+
+/**
+ * Calculates dynamic 5-match form directly from completed fixtures
+ * 1. Queries/filters fixtures for the team where status = 'FINISHED' and valid scores exist
+ * 2. Sorts by match_time DESC
+ * 3. Evaluates outcome from team's perspective (W / D / L)
+ * 4. Produces chronological 5-character string (e.g. 'WWWWL' where the last character is the most recent match)
+ * 5. Returns null if fewer than 3 completed records exist (triggering standings fallback)
+ */
+export function computeFormFromMatches(
+  teamId: string,
+  matches: CompletedMatchRecord[]
+): string | null {
+  const teamMatches = matches
+    .filter((m) => {
+      const isTeam = m.home_team_id === teamId || m.away_team_id === teamId;
+      const isFinished = m.status === 'FINISHED';
+      const hasScores = typeof m.score_home === 'number' && typeof m.score_away === 'number';
+      return isTeam && isFinished && hasScores;
+    })
+    .sort((a, b) => new Date(b.match_time).getTime() - new Date(a.match_time).getTime());
+
+  // Fall back to standings if historical finished match records in the database are fewer than 3
+  if (teamMatches.length < 3) {
+    return null;
+  }
+
+  // Take the last 5 completed matches
+  const recent5 = teamMatches.slice(0, 5);
+
+  // Chronological order: oldest to newest so the last character is the most recent match
+  const chronological = [...recent5].reverse();
+
+  const outcomes = chronological.map((m) => {
+    const isHome = m.home_team_id === teamId;
+    const homeScore = m.score_home!;
+    const awayScore = m.score_away!;
+
+    if (isHome) {
+      if (homeScore > awayScore) return 'W';
+      if (homeScore === awayScore) return 'D';
+      return 'L';
+    } else {
+      if (awayScore > homeScore) return 'W';
+      if (awayScore === homeScore) return 'D';
+      return 'L';
+    }
+  });
+
+  return outcomes.join('');
+}
+
 export interface StandingsTeamData {
   teamId: string;
   name: string;
@@ -213,7 +274,36 @@ export async function syncLeagueEnrichment(
   const { injuriesByTeam, remainingQuota, totalInjuries, seasonUsed } =
     await fetchLeagueInjuries(leagueCode);
 
-  // 3. Retrieve teams for this league
+  // 3. Retrieve finished matches from Supabase and mock datasets to derive dynamic form
+  const finishedMatches: CompletedMatchRecord[] = [];
+  if (supabase) {
+    try {
+      const { data: dbFinished } = await supabase
+        .from('fixtures')
+        .select('id, home_team_id, away_team_id, score_home, score_away, match_time, status')
+        .eq('status', 'FINISHED')
+        .order('match_time', { ascending: false });
+      if (dbFinished && dbFinished.length > 0) {
+        finishedMatches.push(...dbFinished);
+      }
+    } catch {}
+  }
+
+  // Include completed matches from MOCK_FIXTURES
+  const mockFinished = MOCK_FIXTURES.filter(
+    (f) => f.status === 'FINISHED'
+  ).map((f) => ({
+    id: f.id,
+    home_team_id: f.home_team_id,
+    away_team_id: f.away_team_id,
+    score_home: f.score_home,
+    score_away: f.score_away,
+    match_time: f.match_time,
+    status: f.status,
+  }));
+  finishedMatches.push(...mockFinished);
+
+  // 4. Retrieve teams for this league
   let teams: Team[] = [];
   if (supabase) {
     const { data: dbTeams, error: dbErr } = await supabase
@@ -246,7 +336,7 @@ export async function syncLeagueEnrichment(
     }
   }
 
-  // 4. Update each team with dynamic form from standings & injuries from API-Sports
+  // 5. Update each team with dynamic form derived directly from match results
   const updatedTeams: Team[] = teams.map((team) => {
     const teamKey = team.name.toLowerCase().trim();
     const standingsData =
@@ -254,9 +344,15 @@ export async function syncLeagueEnrichment(
       standingsMap.get(teamKey) ||
       (team.aliases && team.aliases.length > 0 ? standingsMap.get(team.aliases[0].toLowerCase().trim()) : undefined);
 
-    // Dynamic form from standings (do NOT fall back to static mock string if team in standings)
+    // 1. Calculate dynamic 5-match form directly from completed fixtures
+    const matchForm = computeFormFromMatches(team.id, finishedMatches);
     let dynamicForm = team.form;
-    if (standingsData && standingsData.form) {
+
+    if (matchForm) {
+      dynamicForm = matchForm;
+      console.log(`[Enrichment] Derived dynamic match form for ${team.name} (${team.id}): ${matchForm}`);
+    } else if (standingsData && standingsData.form) {
+      // 2. Fall back to standings table form only if historical finished match records are fewer than 3
       dynamicForm = standingsData.form;
     }
 
@@ -423,6 +519,20 @@ export async function syncFixturesAndTeams(options?: {
       ? MOCK_FIXTURES
       : MOCK_FIXTURES.filter((f) => leaguesToSync.includes(f.league));
 
+    const mockFinished = MOCK_FIXTURES.filter((f) => f.status === 'FINISHED').map((f) => ({
+      id: f.id,
+      home_team_id: f.home_team_id,
+      away_team_id: f.away_team_id,
+      score_home: f.score_home,
+      score_away: f.score_away,
+      match_time: f.match_time,
+      status: f.status,
+    }));
+    filteredTeams = filteredTeams.map((t) => {
+      const derived = computeFormFromMatches(t.id, mockFinished);
+      return derived ? { ...t, form: derived } : t;
+    });
+
     gatheredFixtures.push(...filteredFixtures);
 
     // Contextual enrichment via API-Sports if API_SPORTS_KEY is present
@@ -559,6 +669,19 @@ export async function syncFixturesAndTeams(options?: {
       // Fetch standings for real team form
       const standingsMap = await fetchStandings(lg);
 
+      // Finished matches lookup for dynamic form calculation
+      const leagueFinished: CompletedMatchRecord[] = MOCK_FIXTURES.filter(
+        (f) => f.status === 'FINISHED' && f.league === lg
+      ).map((f) => ({
+        id: f.id,
+        home_team_id: f.home_team_id,
+        away_team_id: f.away_team_id,
+        score_home: f.score_home,
+        score_away: f.score_away,
+        match_time: f.match_time,
+        status: f.status,
+      }));
+
       for (const m of matches) {
         const homeId = findNormalizedTeamId(m.homeTeam.name, lg) || cleanTeamString(m.homeTeam.name);
         const awayId = findNormalizedTeamId(m.awayTeam.name, lg) || cleanTeamString(m.awayTeam.name);
@@ -583,8 +706,11 @@ export async function syncFixturesAndTeams(options?: {
         const standingsHome = standingsMap.get(homeId) || standingsMap.get(m.homeTeam.name.toLowerCase().trim());
         const standingsAway = standingsMap.get(awayId) || standingsMap.get(m.awayTeam.name.toLowerCase().trim());
 
-        const homeForm = (standingsHome && standingsHome.form) ? standingsHome.form : parseTeamForm(m.homeTeam.form);
-        const awayForm = (standingsAway && standingsAway.form) ? standingsAway.form : parseTeamForm(m.awayTeam.form);
+        const homeMatchForm = computeFormFromMatches(homeId, leagueFinished);
+        const awayMatchForm = computeFormFromMatches(awayId, leagueFinished);
+
+        const homeForm = homeMatchForm || ((standingsHome && standingsHome.form) ? standingsHome.form : parseTeamForm(m.homeTeam.form));
+        const awayForm = awayMatchForm || ((standingsAway && standingsAway.form) ? standingsAway.form : parseTeamForm(m.awayTeam.form));
 
         const homeTeamObj: Team = {
           id: homeId,

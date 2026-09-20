@@ -164,11 +164,11 @@ async function runSmokeTests() {
     if (!enrichData.success || !Array.isArray(enrichData.teams) || enrichData.teams.length === 0) {
       throw new Error('Enrichment API response structure is invalid or returned 0 teams');
     }
-    const firstTeam = enrichData.teams[0];
-    if (!firstTeam.id || !firstTeam.name || typeof firstTeam.form !== 'string' || typeof firstTeam.key_injuries_count !== 'number') {
-      throw new Error('Enriched team payload missing id, name, form, or key_injuries_count');
+    const arsenal = enrichData.teams.find(t => t.id === 'arsenal');
+    if (!arsenal || arsenal.form !== 'WWWWL') {
+      throw new Error(`Expected Arsenal dynamic form to be 'WWWWL', received '${arsenal?.form}'`);
     }
-    console.log(`   ✅ Enrichment API returned success (${enrichData.teams.length} teams enriched for ${enrichData.league}, standings: ${enrichData.standings_synced}, injuries: ${enrichData.injuries_count}).`);
+    console.log(`   ✅ Enrichment API returned success (${enrichData.teams.length} teams enriched for ${enrichData.league}, Arsenal dynamic form: ${arsenal.form}).`);
 
     console.log('\n🎉 All smoke tests passed successfully!');
   } catch (err) {

@@ -3,6 +3,7 @@ import { Fixture, AIParlay, Team, MarketOdds } from '@/types';
 import { MOCK_FIXTURES, MOCK_HISTORICAL_PARLAYS, MOCK_TEAMS } from '@/lib/mock-data';
 import { analyzeFixtureQuant } from '@/lib/analytics';
 import { generateCuratedParlays } from '@/lib/ai-parlay-generator';
+import { computeFormFromMatches, CompletedMatchRecord } from '@/app/api/sync/pipeline';
 
 export async function getOddsMatrixData(): Promise<{
   fixtures: Fixture[];
@@ -20,14 +21,26 @@ export async function getOddsMatrixData(): Promise<{
       };
     }
 
+    const mockFinished = MOCK_FIXTURES.filter((f) => f.status === 'FINISHED');
     const activeFixtures = MOCK_FIXTURES.filter((f) => {
       const isLiveOrUpcoming = ['SCHEDULED', 'TIMED', 'IN_PLAY', 'PAUSED', 'HALFTIME'].includes(f.status || 'SCHEDULED');
       const isRecentOrFuture = new Date(f.match_time).getTime() >= Date.now() - 3 * 3600 * 1000;
       return isLiveOrUpcoming && isRecentOrFuture;
-    }).map((f) => ({
-      ...f,
-      quantAnalysis: analyzeFixtureQuant(f),
-    }));
+    }).map((f) => {
+      const homeDerived = computeFormFromMatches(f.home_team_id, mockFinished);
+      const awayDerived = computeFormFromMatches(f.away_team_id, mockFinished);
+      const homeTeam = f.homeTeam ? { ...f.homeTeam, form: homeDerived || f.homeTeam.form } : undefined;
+      const awayTeam = f.awayTeam ? { ...f.awayTeam, form: awayDerived || f.awayTeam.form } : undefined;
+      const fixObj = {
+        ...f,
+        homeTeam,
+        awayTeam,
+      };
+      return {
+        ...fixObj,
+        quantAnalysis: analyzeFixtureQuant(fixObj),
+      };
+    });
     const activeSlips = generateCuratedParlays(activeFixtures);
     const settledSlips = MOCK_HISTORICAL_PARLAYS.filter((p) => p.status === 'won' || p.status === 'lost');
     return {
@@ -44,7 +57,12 @@ export async function getOddsMatrixData(): Promise<{
     });
 
     if (!rpcError && Array.isArray(rpcBoard) && rpcBoard.length > 0) {
+      const mockFinished = MOCK_FIXTURES.filter((f) => f.status === 'FINISHED');
       const fixtures: Fixture[] = rpcBoard.map((f: any) => {
+        const homeDerived = computeFormFromMatches(f.home_team_id, mockFinished);
+        const awayDerived = computeFormFromMatches(f.away_team_id, mockFinished);
+        const homeTeam = f.homeTeam ? { ...f.homeTeam, form: homeDerived || f.homeTeam.form } : undefined;
+        const awayTeam = f.awayTeam ? { ...f.awayTeam, form: awayDerived || f.awayTeam.form } : undefined;
         const fixtureObj: Fixture = {
           id: f.id,
           league: f.league,
@@ -54,8 +72,8 @@ export async function getOddsMatrixData(): Promise<{
           status: f.status || 'SCHEDULED',
           score_home: typeof f.score_home === 'number' ? f.score_home : undefined,
           score_away: typeof f.score_away === 'number' ? f.score_away : undefined,
-          homeTeam: f.homeTeam,
-          awayTeam: f.awayTeam,
+          homeTeam,
+          awayTeam,
           marketOdds: f.marketOdds,
         };
         fixtureObj.quantAnalysis = analyzeFixtureQuant(fixtureObj);
@@ -93,7 +111,7 @@ export async function getOddsMatrixData(): Promise<{
     }
 
     // 1. Fetch teams, fixtures, and market odds from Supabase concurrently
-    const [teamsRes, fixturesRes, oddsRes, parlaysRes] = await Promise.all([
+    const [teamsRes, fixturesRes, finishedRes, oddsRes, parlaysRes] = await Promise.all([
       supabase.from('teams').select('*'),
       supabase
         .from('fixtures')
@@ -101,6 +119,11 @@ export async function getOddsMatrixData(): Promise<{
         .in('status', ['SCHEDULED', 'TIMED', 'IN_PLAY', 'PAUSED', 'HALFTIME'])
         .gte('match_time', new Date(Date.now() - 3 * 3600 * 1000).toISOString())
         .order('match_time', { ascending: true }),
+      supabase
+        .from('fixtures')
+        .select('*')
+        .eq('status', 'FINISHED')
+        .order('match_time', { ascending: false }),
       supabase.from('market_odds').select('*'),
       supabase.from('ai_parlays').select('*').order('created_at', { ascending: false }),
     ]);
@@ -119,10 +142,18 @@ export async function getOddsMatrixData(): Promise<{
           source: 'supabase',
         };
       }
-      const fixtures = MOCK_FIXTURES.map(f => ({
-        ...f,
-        quantAnalysis: analyzeFixtureQuant(f),
-      }));
+      const mockFinished = MOCK_FIXTURES.filter((f) => f.status === 'FINISHED');
+      const fixtures = MOCK_FIXTURES.map((f) => {
+        const homeDerived = computeFormFromMatches(f.home_team_id, mockFinished);
+        const awayDerived = computeFormFromMatches(f.away_team_id, mockFinished);
+        const homeTeam = f.homeTeam ? { ...f.homeTeam, form: homeDerived || f.homeTeam.form } : undefined;
+        const awayTeam = f.awayTeam ? { ...f.awayTeam, form: awayDerived || f.awayTeam.form } : undefined;
+        const fixObj = { ...f, homeTeam, awayTeam };
+        return {
+          ...fixObj,
+          quantAnalysis: analyzeFixtureQuant(fixObj),
+        };
+      });
       const activeSlips = generateCuratedParlays(fixtures);
       const settledSlips = MOCK_HISTORICAL_PARLAYS.filter(p => p.status === 'won' || p.status === 'lost');
       return {
@@ -141,6 +172,19 @@ export async function getOddsMatrixData(): Promise<{
     for (const [id, t] of Object.entries(MOCK_TEAMS)) {
       if (!teamMap.has(id)) {
         teamMap.set(id, t);
+      }
+    }
+
+    // Derive dynamic form from completed matches
+    const allFinishedMatches: CompletedMatchRecord[] = [
+      ...((finishedRes?.data as any[]) || []),
+      ...MOCK_FIXTURES.filter((f) => f.status === 'FINISHED'),
+    ];
+
+    for (const [id, t] of teamMap.entries()) {
+      const derivedForm = computeFormFromMatches(id, allFinishedMatches);
+      if (derivedForm) {
+        t.form = derivedForm;
       }
     }
 
