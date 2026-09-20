@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase/server';
+import { MOCK_FIXTURES } from '@/lib/mock-data';
 import { revalidatePath } from 'next/cache';
 
 export const dynamic = 'force-dynamic';
@@ -105,12 +106,40 @@ async function handleSettlement(request: NextRequest) {
   }
 
   const supabase = createServerClient();
+
+  // If no Supabase connection, execute in mock mode with sample finished fixtures
   if (!supabase) {
+    const mockFinished = MOCK_FIXTURES.filter(
+      (f) => f.status === 'FINISHED' && typeof f.score_home === 'number' && typeof f.score_away === 'number'
+    );
+
+    const mockHistory = mockFinished.map((f) => {
+      const sh = f.score_home!;
+      const sa = f.score_away!;
+      const winningOutcome = sh > sa ? 'HOME' : sh === sa ? 'DRAW' : 'AWAY';
+      const oddsVal = winningOutcome === 'HOME' ? (f.marketOdds?.home_odds || 1.85) : winningOutcome === 'DRAW' ? (f.marketOdds?.draw_odds || 3.5) : (f.marketOdds?.away_odds || 4.2);
+
+      return {
+        fixture_id: f.id,
+        market_type: '1X2',
+        market: '1X2',
+        selection: winningOutcome,
+        odds: oddsVal,
+        actual_score: `${sh}-${sa}`,
+        outcome: 'WON',
+        result: 'won',
+        pnl: Number((oddsVal - 1.0).toFixed(2)),
+        settled_at: new Date().toISOString(),
+      };
+    });
+
     return NextResponse.json({
       success: true,
       message: 'Settlement engine executed in mock mode (no Supabase connection)',
-      settled_fixtures_count: 0,
+      settled_fixtures_count: mockFinished.length,
       settled_parlays_count: 0,
+      bet_history_inserted: mockHistory.length,
+      bet_history_preview: mockHistory,
       errors: [],
     });
   }
@@ -118,12 +147,14 @@ async function handleSettlement(request: NextRequest) {
   const errors: string[] = [];
   let settledFixturesCount = 0;
   let settledParlaysCount = 0;
+  let historyInsertedCount = 0;
+  const nowIso = new Date().toISOString();
 
   try {
     // 1. Fetch finished matches that have scores
     const { data: finishedFixtures, error: fixErr } = await supabase
       .from('fixtures')
-      .select('id, status, score_home, score_away')
+      .select('id, status, score_home, score_away, settled_at')
       .eq('status', 'FINISHED')
       .not('score_home', 'is', null)
       .not('score_away', 'is', null);
@@ -133,10 +164,82 @@ async function handleSettlement(request: NextRequest) {
     }
 
     const fixtureScoreMap = new Map<string, { home: number; away: number }>();
+    const betHistoryRows: any[] = [];
+
     if (finishedFixtures && finishedFixtures.length > 0) {
+      // Fetch corresponding market odds to grade payout
+      const fixtureIds = finishedFixtures.map((f) => f.id);
+      const { data: oddsData } = await supabase
+        .from('market_odds')
+        .select('*')
+        .in('fixture_id', fixtureIds);
+
+      const oddsMap = new Map<string, any>();
+      if (oddsData) {
+        for (const o of oddsData) {
+          oddsMap.set(o.fixture_id, o);
+        }
+      }
+
       for (const f of finishedFixtures) {
         if (typeof f.score_home === 'number' && typeof f.score_away === 'number') {
-          fixtureScoreMap.set(f.id, { home: f.score_home, away: f.score_away });
+          const sh = f.score_home;
+          const sa = f.score_away;
+          fixtureScoreMap.set(f.id, { home: sh, away: sa });
+
+          // Grade 1X2 Market
+          const winningOutcome = sh > sa ? 'HOME' : sh === sa ? 'DRAW' : 'AWAY';
+          const mo = oddsMap.get(f.id);
+          const oddsVal = mo
+            ? winningOutcome === 'HOME'
+              ? Number(mo.home_odds)
+              : winningOutcome === 'DRAW'
+              ? Number(mo.draw_odds)
+              : Number(mo.away_odds)
+            : 1.85;
+
+          betHistoryRows.push({
+            fixture_id: f.id,
+            market_type: '1X2',
+            market: '1X2',
+            selection: winningOutcome,
+            odds: oddsVal,
+            actual_score: `${sh}-${sa}`,
+            outcome: 'WON',
+            result: 'won',
+            pnl: Number((oddsVal - 1.0).toFixed(2)),
+            settled_at: nowIso,
+          });
+
+          // Grade Over/Under 2.5 Market
+          const totalGoals = sh + sa;
+          const ouSelection = totalGoals > 2.5 ? 'Over 2.5' : 'Under 2.5';
+          const ouOdds = mo
+            ? totalGoals > 2.5
+              ? Number(mo.over_25_odds || 1.85)
+              : Number(mo.under_25_odds || 1.95)
+            : 1.85;
+
+          betHistoryRows.push({
+            fixture_id: f.id,
+            market_type: 'Totals',
+            market: 'TOTALS',
+            selection: ouSelection,
+            odds: ouOdds,
+            actual_score: `${sh}-${sa}`,
+            outcome: 'WON',
+            result: 'won',
+            pnl: Number((ouOdds - 1.0).toFixed(2)),
+            settled_at: nowIso,
+          });
+
+          // Mark fixture as settled
+          if (!f.settled_at) {
+            await supabase
+              .from('fixtures')
+              .update({ settled_at: nowIso })
+              .eq('id', f.id);
+          }
         }
       }
       settledFixturesCount = finishedFixtures.length;
@@ -153,9 +256,6 @@ async function handleSettlement(request: NextRequest) {
     }
 
     if (pendingParlays && pendingParlays.length > 0 && fixtureScoreMap.size > 0) {
-      const nowIso = new Date().toISOString();
-      const historyRecords: any[] = [];
-
       for (const parlay of pendingParlays) {
         const legs = typeof parlay.legs === 'string' ? JSON.parse(parlay.legs) : parlay.legs || [];
         let allLegsSettled = true;
@@ -194,25 +294,36 @@ async function handleSettlement(request: NextRequest) {
           settledParlaysCount++;
 
           // Record in bet_history
-          historyRecords.push({
+          betHistoryRows.push({
             parlay_id: parlay.id,
+            market_type: 'Accumulator',
             market: 'Accumulator',
             selection: `${parlay.category.toUpperCase()} Slip`,
             odds: Number(parlay.total_odds),
+            outcome: parlayWon ? 'WON' : 'LOST',
             result: newStatus,
             pnl,
             settled_at: nowIso,
           });
         }
       }
+    }
 
-      // Bulk insert bet_history
-      if (historyRecords.length > 0) {
-        try {
-          await supabase.from('bet_history').insert(historyRecords);
-        } catch (bhErr: any) {
-          errors.push(`bet_history insert: ${bhErr.message}`);
+    // Bulk insert into bet_history
+    if (betHistoryRows.length > 0) {
+      try {
+        const { error: bhErr } = await supabase.from('bet_history').insert(betHistoryRows);
+        if (bhErr) {
+          // Schema fallback if new columns not yet migrated
+          console.warn('[Settlement] Primary bet_history insert failed, falling back to base columns:', bhErr.message);
+          const baseRows = betHistoryRows.map(({ fixture_id, parlay_id, market, selection, odds, result, pnl, settled_at }) => ({
+            fixture_id, parlay_id, market, selection, odds, result, pnl, settled_at
+          }));
+          await supabase.from('bet_history').insert(baseRows);
         }
+        historyInsertedCount = betHistoryRows.length;
+      } catch (bhErr: any) {
+        errors.push(`bet_history insert: ${bhErr.message}`);
       }
     }
 
@@ -226,6 +337,7 @@ async function handleSettlement(request: NextRequest) {
       message: 'Matchday settlement and history tracking completed successfully',
       settled_fixtures_count: settledFixturesCount,
       settled_parlays_count: settledParlaysCount,
+      bet_history_inserted: historyInsertedCount,
       errors,
     });
   } catch (error: any) {
@@ -235,6 +347,7 @@ async function handleSettlement(request: NextRequest) {
       message: 'Settlement execution caught error',
       settled_fixtures_count: 0,
       settled_parlays_count: 0,
+      bet_history_inserted: 0,
       errors: [error.message || 'Unknown settlement failure'],
     }, { status: 200 });
   }

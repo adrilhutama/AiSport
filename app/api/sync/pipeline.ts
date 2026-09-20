@@ -175,7 +175,7 @@ export async function syncFixturesAndTeams(options?: {
 
   // If API key is missing, use curated mock fixtures filtered to target leagues
   if (!footballDataKey) {
-    const filteredTeams = leaguesToSync.length === ALL_SUPPORTED_LEAGUES.length
+    let filteredTeams = leaguesToSync.length === ALL_SUPPORTED_LEAGUES.length
       ? Object.values(MOCK_TEAMS)
       : Object.values(MOCK_TEAMS).filter((t) => leaguesToSync.includes(t.league));
 
@@ -184,6 +184,27 @@ export async function syncFixturesAndTeams(options?: {
       : MOCK_FIXTURES.filter((f) => leaguesToSync.includes(f.league));
 
     gatheredFixtures.push(...filteredFixtures);
+
+    // Contextual enrichment via API-Sports if API_SPORTS_KEY is present
+    const apiSportsKey =
+      process.env.API_SPORTS_KEY ||
+      process.env.APISPORTS_KEY ||
+      process.env.API_FOOTBALL_KEY;
+
+    if (apiSportsKey) {
+      for (const lg of leaguesToSync) {
+        const lgTeams = filteredTeams.filter((t) => t.league === lg);
+        if (lgTeams.length > 0) {
+          try {
+            const enriched = await enrichTeamsWithContext(lgTeams, lg);
+            const enrichedMap = new Map(enriched.map((t) => [t.id, t]));
+            filteredTeams = filteredTeams.map((t) => enrichedMap.get(t.id) || t);
+          } catch (err: any) {
+            console.warn(`[Pipeline] API-Sports context enrichment failed for ${lg}:`, err.message);
+          }
+        }
+      }
+    }
 
     if (supabase) {
       // 1. Teams upsert with schema fallback (crest_url, rolling_xg, key_injuries_count, missing_players, avg_xg_for/against)

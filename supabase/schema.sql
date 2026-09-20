@@ -61,6 +61,24 @@ CREATE TABLE IF NOT EXISTS public.ai_parlays (
     true_probability NUMERIC(5,4) NOT NULL,    -- Quantitative model calculated probability (0.0000 - 1.0000)
     expected_value NUMERIC(6,2) NOT NULL,      -- Expected Value % (e.g. +14.5%)
     status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'won', 'lost')),
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    settled_at TIMESTAMPTZ DEFAULT NULL
+);
+
+-- 6. Bet History Table (Settled bets & historical track record)
+CREATE TABLE IF NOT EXISTS public.bet_history (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    fixture_id TEXT REFERENCES public.fixtures(id) ON DELETE CASCADE,
+    parlay_id UUID REFERENCES public.ai_parlays(id) ON DELETE SET NULL,
+    market TEXT NOT NULL DEFAULT '1X2',
+    market_type TEXT DEFAULT '1X2',
+    selection TEXT NOT NULL,
+    odds NUMERIC(6,2) NOT NULL,
+    actual_score TEXT,
+    outcome TEXT DEFAULT 'WON',
+    result TEXT NOT NULL DEFAULT 'won' CHECK (result IN ('won', 'lost', 'push')),
+    pnl NUMERIC(8,2) NOT NULL DEFAULT 0.00,
+    settled_at TIMESTAMPTZ DEFAULT NOW(),
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -71,6 +89,8 @@ CREATE INDEX IF NOT EXISTS idx_teams_league ON public.teams(league);
 CREATE INDEX IF NOT EXISTS idx_ai_parlays_category ON public.ai_parlays(category);
 CREATE INDEX IF NOT EXISTS idx_ai_parlays_status ON public.ai_parlays(status);
 CREATE INDEX IF NOT EXISTS idx_ai_parlays_created_at ON public.ai_parlays(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_bet_history_settled_at ON public.bet_history(settled_at DESC);
+CREATE INDEX IF NOT EXISTS idx_bet_history_fixture ON public.bet_history(fixture_id);
 
 -- Enable Row Level Security (RLS)
 ALTER TABLE public.teams ENABLE ROW LEVEL SECURITY;
@@ -232,6 +252,8 @@ BEGIN
     LEFT JOIN public.teams at ON f.away_team_id = at.id
     LEFT JOIN public.market_odds mo ON f.id = mo.fixture_id
     WHERE (league_filter = 'ALL' OR league_filter IS NULL OR f.league = league_filter)
+      AND f.status IN ('SCHEDULED', 'TIMED', 'IN_PLAY', 'PAUSED', 'HALFTIME')
+      AND f.match_time >= NOW() - INTERVAL '3 hours'
     ORDER BY f.match_time ASC;
 
     RETURN COALESCE(result, '[]'::jsonb);

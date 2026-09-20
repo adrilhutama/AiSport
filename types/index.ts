@@ -11,6 +11,12 @@ export interface LeagueInfo {
   avgAwayGoals: number;
 }
 
+export interface MissingPlayer {
+  name: string;
+  position?: string;
+  reason?: string;
+}
+
 export interface Team {
   id: string;
   league: LeagueCode;
@@ -23,9 +29,25 @@ export interface Team {
   logo_url?: string;      // Alias for crest_url
   rolling_xg?: number;    // Contextual rolling expected goals from API-Football
   key_injuries_count?: number; // Number of key starters out
-  missing_players?: string[]; // Array of key missing players from API-Football
+  missing_players?: (string | MissingPlayer)[]; // Array of key missing players from API-Football
   avg_xg_for?: number;        // Rolling expected goals scored
   avg_xg_against?: number;    // Rolling expected goals conceded
+}
+
+export interface BetHistoryRecord {
+  id?: string;
+  fixture_id?: string;
+  parlay_id?: string;
+  market_type?: string;
+  market?: string;
+  selection: string;
+  odds: number;
+  actual_score?: string;
+  outcome?: 'WON' | 'LOST' | 'VOID' | string;
+  result?: 'won' | 'lost' | 'push' | string;
+  pnl?: number;
+  settled_at?: string;
+  created_at?: string;
 }
 
 export interface MarketOdds {

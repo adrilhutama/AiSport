@@ -12,14 +12,18 @@ export async function getOddsMatrixData(): Promise<{
   const supabase = createServerClient();
 
   if (!supabase) {
-    const fixtures = MOCK_FIXTURES.map(f => ({
+    const activeFixtures = MOCK_FIXTURES.filter((f) => {
+      const isLiveOrUpcoming = ['SCHEDULED', 'TIMED', 'IN_PLAY', 'PAUSED', 'HALFTIME'].includes(f.status || 'SCHEDULED');
+      const isRecentOrFuture = new Date(f.match_time).getTime() >= Date.now() - 3 * 3600 * 1000;
+      return isLiveOrUpcoming && isRecentOrFuture;
+    }).map((f) => ({
       ...f,
       quantAnalysis: analyzeFixtureQuant(f),
     }));
-    const activeSlips = generateCuratedParlays(fixtures);
-    const settledSlips = MOCK_HISTORICAL_PARLAYS.filter(p => p.status === 'won' || p.status === 'lost');
+    const activeSlips = generateCuratedParlays(activeFixtures);
+    const settledSlips = MOCK_HISTORICAL_PARLAYS.filter((p) => p.status === 'won' || p.status === 'lost');
     return {
-      fixtures,
+      fixtures: activeFixtures,
       parlays: [...activeSlips, ...settledSlips],
       source: 'mock_fallback',
     };
@@ -40,6 +44,8 @@ export async function getOddsMatrixData(): Promise<{
           away_team_id: f.away_team_id,
           match_time: f.match_time,
           status: f.status || 'SCHEDULED',
+          score_home: typeof f.score_home === 'number' ? f.score_home : undefined,
+          score_away: typeof f.score_away === 'number' ? f.score_away : undefined,
           homeTeam: f.homeTeam,
           awayTeam: f.awayTeam,
           marketOdds: f.marketOdds,
@@ -81,7 +87,12 @@ export async function getOddsMatrixData(): Promise<{
     // 1. Fetch teams, fixtures, and market odds from Supabase concurrently
     const [teamsRes, fixturesRes, oddsRes, parlaysRes] = await Promise.all([
       supabase.from('teams').select('*'),
-      supabase.from('fixtures').select('*').order('match_time', { ascending: true }),
+      supabase
+        .from('fixtures')
+        .select('*')
+        .in('status', ['SCHEDULED', 'TIMED', 'IN_PLAY', 'PAUSED', 'HALFTIME'])
+        .gte('match_time', new Date(Date.now() - 3 * 3600 * 1000).toISOString())
+        .order('match_time', { ascending: true }),
       supabase.from('market_odds').select('*'),
       supabase.from('ai_parlays').select('*').order('created_at', { ascending: false }),
     ]);
@@ -176,6 +187,8 @@ export async function getOddsMatrixData(): Promise<{
         away_team_id: f.away_team_id,
         match_time: f.match_time,
         status: f.status || 'SCHEDULED',
+        score_home: typeof f.score_home === 'number' ? f.score_home : undefined,
+        score_away: typeof f.score_away === 'number' ? f.score_away : undefined,
         homeTeam,
         awayTeam,
         marketOdds,

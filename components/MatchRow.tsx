@@ -182,10 +182,26 @@ export const MatchRow: React.FC<MatchRowProps> = ({
       <div className="min-h-[58px] py-1.5 px-3 grid grid-cols-12 gap-2 items-center text-xs">
         {/* Cell 1: Time & Event (Col span: 4 lg:3) */}
         <div className="col-span-5 lg:col-span-4 flex items-center gap-2">
-          {/* Kickoff timestamp */}
-          <div className="flex flex-col items-center justify-center shrink-0 w-11 text-[10px] font-mono text-slate-400 border-r border-slate-800 pr-1.5">
-            <span className="text-slate-200 font-bold">{timeStr}</span>
-            <span className="text-[9px] text-slate-500">{dateStr}</span>
+          {/* Kickoff timestamp or Live Status */}
+          <div className="flex flex-col items-center justify-center shrink-0 w-12 text-[10px] font-mono text-slate-400 border-r border-slate-800 pr-1.5">
+            {fixture.status === 'IN_PLAY' || fixture.status === 'PAUSED' ? (
+              <>
+                <span className="flex items-center gap-1 text-emerald-400 font-bold text-[10px]">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  LIVE
+                </span>
+                <span className="text-[10px] font-bold text-slate-200">
+                  {typeof fixture.score_home === 'number' && typeof fixture.score_away === 'number'
+                    ? `${fixture.score_home}-${fixture.score_away}`
+                    : '1H'}
+                </span>
+              </>
+            ) : (
+              <>
+                <span className="text-slate-200 font-bold">{timeStr}</span>
+                <span className="text-[9px] text-slate-500">{dateStr}</span>
+              </>
+            )}
           </div>
 
           {/* Teams stacked vertically */}

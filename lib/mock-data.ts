@@ -692,8 +692,10 @@ export const MOCK_FIXTURES: Fixture[] = [
     league: 'SA',
     home_team_id: 'juventus',
     away_team_id: 'napoli',
-    match_time: '2026-09-20T16:00:00Z',
-    status: 'SCHEDULED',
+    match_time: '2026-09-20T15:30:00Z',
+    status: 'IN_PLAY',
+    score_home: 1,
+    score_away: 0,
     homeTeam: MOCK_TEAMS['juventus'],
     awayTeam: MOCK_TEAMS['napoli'],
     marketOdds: {
@@ -744,6 +746,30 @@ export const MOCK_FIXTURES: Fixture[] = [
       away_odds: 4.20,
       over_25_odds: 1.38,
       under_25_odds: 3.10,
+    }
+  },
+  {
+    id: 'bl-lev-rbl',
+    league: 'BL1',
+    home_team_id: 'leverkusen',
+    away_team_id: 'rb-leipzig',
+    match_time: '2026-09-20T13:30:00Z',
+    status: 'FINISHED',
+    score_home: 2,
+    score_away: 0,
+    homeTeam: MOCK_TEAMS['leverkusen'],
+    awayTeam: MOCK_TEAMS['rb-leipzig'],
+    marketOdds: {
+      fixture_id: 'bl-lev-rbl',
+      bookmaker: 'Pinnacle Consensus',
+      home_odds: 1.85,
+      draw_odds: 3.80,
+      away_odds: 4.10,
+      over_25_odds: 1.65,
+      under_25_odds: 2.25,
+      handicap_odds: { 'home_-0.5': 1.85, 'away_+0.5': 2.05 },
+      totals_odds: { 'over_1.5': 1.22, 'under_1.5': 4.20, 'over_2.5': 1.65, 'under_2.5': 2.25, 'over_3.5': 2.70, 'under_3.5': 1.45 },
+      btts_odds: { btts_yes: 1.60, btts_no: 2.30 },
     }
   },
   {

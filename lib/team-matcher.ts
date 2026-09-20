@@ -30,7 +30,7 @@ export const TEAM_ALIASES_BY_LEAGUE: Record<LeagueCode, Record<string, string[]>
   },
 
   PD: {
-    'real-madrid': ['real madrid', 'real madrid cf'],
+    'real-madrid': ['real madrid', 'real madrid cf', 'real madrid club de futbol', 'madrid', 'rmcf', 'real-madrid'],
     'barcelona': ['barcelona', 'fc barcelona'],
     'atletico-madrid': ['atletico madrid', 'atletico de madrid', 'club atletico de madrid'],
     'athletic-bilbao': ['athletic bilbao', 'athletic club', 'athletic club bilbao'],
@@ -119,29 +119,34 @@ export const TEAM_ALIASES_BY_LEAGUE: Record<LeagueCode, Record<string, string[]>
   },
 
   CL: {
-    'real-madrid-cl': ['real madrid', 'real madrid cf', 'madrid'],
-    'man-city-cl': ['manchester city', 'man city', 'manchester city fc'],
-    'bayern-munich-cl': ['bayern munich', 'fc bayern munchen', 'bayern'],
-    'bayer-leverkusen-cl': ['bayer leverkusen', 'bayer 04 leverkusen', 'leverkusen'],
+    'real-madrid-cl': ['real madrid cl', 'real madrid ucl', 'real madrid', 'real madrid cf', 'madrid'],
+    'man-city-cl': ['manchester city cl', 'man city cl', 'manchester city', 'man city'],
+    'bayern-munich-cl': ['bayern munich cl', 'bayern munich', 'bayern'],
+    'bayer-leverkusen-cl': ['bayer leverkusen cl', 'bayer leverkusen', 'leverkusen'],
     'sporting-cp': ['sporting cp', 'sporting clube de portugal', 'sporting lisbon', 'sporting'],
     'celtic': ['celtic', 'celtic fc'],
   },
 
   EL: {
-    'roma-el': ['as roma', 'roma'],
+    'roma-el': ['as roma el', 'roma el', 'as roma', 'roma'],
     'porto': ['fc porto', 'porto'],
-    'athletic-bilbao-el': ['athletic club', 'athletic bilbao', 'bilbao'],
+    'athletic-bilbao-el': ['athletic club el', 'athletic bilbao el', 'athletic club', 'athletic bilbao'],
     'galatasaray': ['galatasaray', 'galatasaray sk'],
     'ajax': ['ajax', 'afc ajax'],
     'fenerbahce': ['fenerbahce', 'fenerbahce sk'],
   },
 };
 
-// Flattened dictionary of all teams for backward compatibility
-export const TEAM_ALIASES: Record<string, string[]> = Object.values(TEAM_ALIASES_BY_LEAGUE).reduce(
-  (acc, leagueDict) => Object.assign(acc, leagueDict),
-  {}
-);
+// Flattened dictionary prioritizing domestic leagues over continental cups
+export const TEAM_ALIASES: Record<string, string[]> = {
+  ...TEAM_ALIASES_BY_LEAGUE.CL,
+  ...TEAM_ALIASES_BY_LEAGUE.EL,
+  ...TEAM_ALIASES_BY_LEAGUE.PL,
+  ...TEAM_ALIASES_BY_LEAGUE.PD,
+  ...TEAM_ALIASES_BY_LEAGUE.SA,
+  ...TEAM_ALIASES_BY_LEAGUE.BL1,
+  ...TEAM_ALIASES_BY_LEAGUE.FL1,
+};
 
 /**
  * Identify which league a team ID belongs to
